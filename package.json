@@ -1,0 +1,20 @@
+{
+  "name": "kami",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "build:js": "bun build static/js/index.js --outdir static/dist --minify",
+    "dev:js": "bun build static/js/index.js --outdir static/dist --watch",
+    "build:css": "bunx tailwindcss -i ./static/css/input.css -o ./static/css/output.css"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@types/bun": "latest",
+    "daisyui": "^4.12.24",
+    "htmx.org": "^2.0.8",
+    "tailwindcss": "^3.4.18"
+  }
+}
+

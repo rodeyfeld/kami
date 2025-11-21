@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom animations */
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes scaleIn {
+	from {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* Apply smooth animations */
+.animate-fadeIn {
+	animation: fadeIn 0.6s ease-out;
+}
+
+.animate-scaleIn {
+	animation: scaleIn 0.4s ease-out;
+}
+
+/* Hover lift effect */
+.hover-lift {
+	transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hover-lift:hover {
+	transform: translateY(-5px);
+	box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* Smooth transitions for all interactive elements */
+button, a, .card {
+	transition: all 0.3s ease;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+	width: 10px;
+}
+
+::-webkit-scrollbar-track {
+	background: oklch(var(--b2));
+}
+
+::-webkit-scrollbar-thumb {
+	background: oklch(var(--p));
+	border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: oklch(var(--pf));
+}
+
+/* Text gradient animation */
+@keyframes gradient-text-shift {
+	0%, 100% {
+		background-position: 0% 50%;
+	}
+	50% {
+		background-position: 100% 50%;
+	}
+}
+
+.gradient-text-animated {
+	background: linear-gradient(
+		90deg,
+		oklch(var(--p)),
+		oklch(var(--s)),
+		oklch(var(--a)),
+		oklch(var(--p))
+	);
+	background-size: 200% auto;
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+	animation: gradient-text-shift 3s ease infinite;
+}
+
+/* Smooth page transitions */
+@media (prefers-reduced-motion: no-preference) {
+	html {
+		scroll-behavior: smooth;
+	}
+}
+
+/* Card animations on hover */
+.card {
+	will-change: transform;
+}
+
+/* Better focus states */
+input:focus, textarea:focus, select:focus {
+	outline: none;
+	box-shadow: 0 0 0 3px oklch(var(--p) / 0.3);
+	border-color: oklch(var(--p));
+}
+

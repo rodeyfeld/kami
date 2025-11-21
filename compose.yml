@@ -1,0 +1,33 @@
+services:
+  web:
+    build:
+      context: .
+      target: dev
+    working_dir: /app
+    command: sh /app/start-dev.sh
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - 8080:8080
+    networks:
+      - kami-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+
+networks:
+  kami-net:
+    driver: bridge
+

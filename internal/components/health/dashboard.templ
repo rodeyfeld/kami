@@ -1,0 +1,206 @@
+package health
+
+import "kami/internal/components/layout"
+import "kami/internal/monitor"
+import "fmt"
+
+templ Dashboard(mode string) {
+	@layout.Base("Health Dashboard") {
+		<div class="space-y-6">
+			<!-- Mode indicator -->
+			<div class="alert alert-info shadow-lg">
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+				<div>
+					<h3 class="font-bold">
+						if mode == "kubernetes" {
+							☸️ Kubernetes Mode
+						} else if mode == "docker" {
+							🐳 Docker Mode (Development)
+						} else {
+							⚠️ Standalone Mode
+						}
+					</h3>
+					<div class="text-sm">
+						if mode == "kubernetes" {
+							Monitoring Kubernetes cluster in galaxy namespace
+						} else if mode == "docker" {
+							Monitoring Docker containers on this host
+						} else {
+							No monitoring backend available
+						}
+					</div>
+				</div>
+			</div>
+			
+			<!-- Auto-refresh status section -->
+			<div 
+				class="animate-fadeIn"
+				hx-get="/api/status" 
+				hx-trigger="load, every 10s"
+				hx-swap="innerHTML"
+			>
+				<div class="flex justify-center items-center py-12">
+					<span class="loading loading-spinner loading-lg text-primary"></span>
+					<span class="ml-4 text-base-content/70">
+						if mode == "docker" {
+							Loading container status...
+						} else {
+							Loading cluster status...
+						}
+					</span>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ StandaloneMode() {
+	<div class="alert alert-warning shadow-lg">
+		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+		</svg>
+		<div>
+			<h3 class="font-bold">Standalone Mode</h3>
+			<div class="text-sm">Kubernetes client not available. Running without cluster monitoring.</div>
+		</div>
+	</div>
+}
+
+templ ErrorState(message string) {
+	<div class="alert alert-error shadow-lg">
+		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+		</svg>
+		<div>
+			<h3 class="font-bold">Error</h3>
+			<div class="text-sm">{ message }</div>
+		</div>
+	</div>
+}
+
+templ StatusCards(status *monitor.Status, mode string) {
+	<div class="space-y-6">
+		<!-- Summary Cards -->
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fadeIn">
+			<div class="stat bg-base-100 rounded-lg shadow-lg">
+				<div class="stat-title">
+					if mode == "docker" {
+						Total Containers
+					} else {
+						Total Resources
+					}
+				</div>
+				<div class="stat-value text-primary">{ fmt.Sprintf("%d", status.TotalCount) }</div>
+			</div>
+			<div class="stat bg-base-100 rounded-lg shadow-lg">
+				<div class="stat-title">Healthy</div>
+				<div class="stat-value text-success">{ fmt.Sprintf("%d", status.HealthyCount) }</div>
+			</div>
+			<div class="stat bg-base-100 rounded-lg shadow-lg">
+				<div class="stat-title">Unhealthy</div>
+				<div class="stat-value text-error">{ fmt.Sprintf("%d", status.UnhealthyCount) }</div>
+			</div>
+		</div>
+
+		<!-- Resource Details -->
+		<div class="space-y-4">
+			<h2 class="text-2xl font-bold">
+				if mode == "docker" {
+					Containers
+				} else {
+					Resources
+				}
+			</h2>
+			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+				for _, resource := range status.Resources {
+					@ResourceCard(resource, mode)
+				}
+			</div>
+		</div>
+
+		<!-- Last Updated -->
+		<div class="text-center text-base-content/50 text-sm">
+			Last updated: <span id="last-update">just now</span> • Auto-refresh every 10s
+		</div>
+	</div>
+}
+
+templ ResourceCard(resource monitor.Resource, mode string) {
+	<div class="card bg-base-100 shadow-lg hover-lift animate-scaleIn">
+		<div class="card-body">
+			<div class="flex justify-between items-start">
+				<div class="flex-1 min-w-0">
+					<h3 class="card-title text-lg truncate">{ resource.Name }</h3>
+					<div class="badge badge-sm badge-ghost mt-1">{ resource.Type }</div>
+					if mode == "docker" && resource.Labels["project"] != "" {
+						<div class="badge badge-sm badge-primary mt-1">📦 { resource.Labels["project"] }</div>
+					}
+				</div>
+				@StatusBadge(resource.State, mode)
+			</div>
+			
+			if resource.Desired > 0 && resource.Type != "Job" && mode != "docker" {
+				<div class="mt-4">
+					<div class="text-sm text-base-content/70 mb-2">Replicas</div>
+					<div class="flex items-center gap-2">
+						<progress 
+							class={ "progress", getProgressColor(resource.State) }
+							value={ fmt.Sprintf("%d", resource.Current) }
+							max={ fmt.Sprintf("%d", resource.Desired) }
+						></progress>
+						<span class="text-sm font-mono">
+							{ fmt.Sprintf("%d/%d", resource.Current, resource.Desired) }
+						</span>
+					</div>
+				</div>
+			}
+			
+			<div class="mt-2">
+				<p class="text-sm text-base-content/70 truncate">{ resource.Status }</p>
+			</div>
+			
+			if mode == "docker" && resource.Labels["id"] != "" {
+				<div class="mt-2">
+					<p class="text-xs text-base-content/50 font-mono truncate">ID: { resource.Labels["id"] }</p>
+				</div>
+			}
+		</div>
+	</div>
+}
+
+templ StatusBadge(state string, mode string) {
+	if mode == "docker" && state == "healthy" {
+		<div class="badge badge-success badge-lg">✓ Running</div>
+	} else if mode == "docker" && state == "unhealthy" {
+		<div class="badge badge-error badge-lg">✗ Stopped</div>
+	} else {
+		switch state {
+			case "Healthy", "healthy":
+				<div class="badge badge-success badge-lg">✓ Healthy</div>
+			case "Degraded":
+				<div class="badge badge-warning badge-lg">⚠ Degraded</div>
+			case "Unhealthy", "unhealthy":
+				<div class="badge badge-error badge-lg">✗ Unhealthy</div>
+			case "Running":
+				<div class="badge badge-info badge-lg">● Running</div>
+			default:
+				<div class="badge badge-ghost badge-lg">? { state }</div>
+		}
+	}
+}
+
+func getProgressColor(status string) string {
+	switch status {
+	case "Healthy", "healthy":
+		return "progress-success"
+	case "Degraded":
+		return "progress-warning"
+	case "Unhealthy", "unhealthy":
+		return "progress-error"
+	default:
+		return "progress-ghost"
+	}
+}
+
