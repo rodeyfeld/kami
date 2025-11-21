@@ -2,10 +2,15 @@ FROM golang:1.25 AS builder
 WORKDIR /app
 
 # Install system dependencies for bun
-RUN apt-get update && apt-get install -y unzip
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip=6.0-* \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install templ and bun for building assets
-RUN go install github.com/a-h/templ/cmd/templ@latest
+RUN go install github.com/a-h/templ/cmd/templ@v0.3.960
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
@@ -24,20 +29,25 @@ RUN bun install --frozen-lockfile
 RUN bun run build:js
 RUN bun run build:css
 
-# Build Go binary
+# Build Go binary (production - no dev tags, uses buildkit's target platform)
 WORKDIR /app/cmd
-RUN CGO_ENABLED=0 go build -o /app/app-binary
+RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /app/app-binary
 
 
 FROM golang:1.25 AS dev
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y unzip
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip=6.0-* \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Go tools
-RUN go install github.com/air-verse/air@v1.52.3
-RUN go install github.com/a-h/templ/cmd/templ@latest
+# Install Go tools with pinned versions
+RUN go install github.com/air-verse/air@v1.52.3 && \
+    go install github.com/a-h/templ/cmd/templ@v0.3.960
 
 # Install bun for JavaScript bundling
 RUN curl -fsSL https://bun.sh/install | bash
@@ -51,9 +61,19 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 # Install ca-certificates for HTTPS requests
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates=20230311 \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/app-binary .
-COPY --from=builder /app/static ./static
+# Create non-root user
+RUN useradd -u 1000 -m -s /bin/bash kami && \
+    mkdir -p /tmp && \
+    chown -R kami:kami /app /tmp
+
+USER kami
+
+COPY --from=builder --chown=kami:kami /app/app-binary .
+COPY --from=builder --chown=kami:kami /app/static ./static
+
 ENTRYPOINT ["/app/app-binary"]
 

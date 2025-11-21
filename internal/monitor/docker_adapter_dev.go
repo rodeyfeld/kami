@@ -35,7 +35,7 @@ func (m *DockerMonitor) GetStatus(ctx context.Context) (*Status, error) {
 		if c.State == "running" {
 			state = "healthy"
 		}
-		
+
 		status.Resources = append(status.Resources, Resource{
 			Name:    c.Name,
 			Type:    "container",
@@ -53,4 +53,3 @@ func (m *DockerMonitor) GetStatus(ctx context.Context) (*Status, error) {
 
 	return status, nil
 }
-

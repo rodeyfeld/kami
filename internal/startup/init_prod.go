@@ -14,8 +14,7 @@ func InitMonitor() monitor.Monitor {
 		log.Println("✓ Kubernetes monitoring active")
 		return monitor.NewK8sMonitor(k8s)
 	}
-	
+
 	log.Println("⚠ Standalone mode - no monitoring")
 	return nil
 }
-

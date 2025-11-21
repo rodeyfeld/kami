@@ -49,4 +49,3 @@ func NewClient() (*Client, error) {
 		Namespace: namespace,
 	}, nil
 }
-

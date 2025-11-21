@@ -13,9 +13,8 @@ func Start() {
 
 	s.Echo.Static("/static", "static")
 	routes.Setup(s)
-	
+
 	if err := s.Start(); err != nil {
 		log.Fatal(err)
 	}
 }
-

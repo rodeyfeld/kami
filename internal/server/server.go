@@ -18,4 +18,3 @@ func NewKamiServer() *KamiServer {
 func (s *KamiServer) Start() error {
 	return s.Echo.Start(":8080")
 }
-

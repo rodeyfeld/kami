@@ -9,13 +9,13 @@ import (
 
 // ServiceStatus represents the health status of a Kubernetes service
 type ServiceStatus struct {
-	Name             string
-	Type             string // "Deployment", "StatefulSet", "Job"
-	Status           string // "Healthy", "Degraded", "Unhealthy", "Unknown"
-	ReadyReplicas    int32
-	DesiredReplicas  int32
+	Name              string
+	Type              string // "Deployment", "StatefulSet", "Job"
+	Status            string // "Healthy", "Degraded", "Unhealthy", "Unknown"
+	ReadyReplicas     int32
+	DesiredReplicas   int32
 	AvailableReplicas int32
-	Message          string
+	Message           string
 }
 
 // ClusterStatus represents the overall cluster health
@@ -139,4 +139,3 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 
 	return status, nil
 }
-

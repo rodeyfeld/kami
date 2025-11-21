@@ -16,14 +16,13 @@ func InitMonitor() monitor.Monitor {
 		log.Println("✓ Docker monitoring active (dev mode)")
 		return monitor.NewDockerMonitor(d)
 	}
-	
+
 	// Fall back to K8s
 	if k8s, err := k8s.NewClient(); err == nil {
 		log.Println("✓ Kubernetes monitoring active")
 		return monitor.NewK8sMonitor(k8s)
 	}
-	
+
 	log.Println("⚠ Standalone mode - no monitoring")
 	return nil
 }
-

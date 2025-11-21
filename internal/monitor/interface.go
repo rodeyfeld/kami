@@ -23,4 +23,3 @@ type Resource struct {
 	Desired int32
 	Labels  map[string]string
 }
-

@@ -16,4 +16,3 @@ func Setup(s *server.KamiServer) {
 	s.Echo.GET("/api/status", h.GetStatus)
 	s.Echo.GET("/healthz", func(c echo.Context) error { return c.String(200, "ok") })
 }
-

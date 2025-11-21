@@ -26,17 +26,16 @@ func (h *HealthHandler) Index(c echo.Context) error {
 
 func (h *HealthHandler) GetStatus(c echo.Context) error {
 	ctx := c.Request().Context()
-	
+
 	if h.server.Monitor == nil {
 		return health.StandaloneMode().Render(ctx, c.Response().Writer)
 	}
-	
+
 	status, err := h.server.Monitor.GetStatus(ctx)
 	if err != nil {
 		log.Printf("Error getting status: %v", err)
 		return health.ErrorState(err.Error()).Render(ctx, c.Response().Writer)
 	}
-	
+
 	return health.StatusCards(status, h.server.Monitor.GetMode()).Render(ctx, c.Response().Writer)
 }
-

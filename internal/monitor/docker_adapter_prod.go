@@ -15,4 +15,3 @@ func (m *DockerMonitor) GetMode() string             { return "standalone" }
 func (m *DockerMonitor) GetStatus(context.Context) (*Status, error) {
 	return nil, errors.New("docker not available in production")
 }
-

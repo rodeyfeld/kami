@@ -17,4 +17,3 @@ type ContainerInfo struct {
 	Status  string // Status message
 	Project string // Compose project name
 }
-

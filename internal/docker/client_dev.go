@@ -43,7 +43,7 @@ func (c *Client) GetContainerStatus(ctx context.Context) (*ContainerStatus, erro
 
 	for _, container := range containers {
 		info := ContainerInfo{
-			ID:      container.ID[:12], // Short ID
+			ID:      container.ID[:12],      // Short ID
 			Name:    container.Names[0][1:], // Remove leading slash
 			Image:   container.Image,
 			State:   container.State,
@@ -62,4 +62,3 @@ func (c *Client) GetContainerStatus(ctx context.Context) (*ContainerStatus, erro
 
 	return status, nil
 }
-
