@@ -4,7 +4,7 @@ WORKDIR /app
 # Install system dependencies for bun
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    unzip=6.0-* \
+    unzip \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -40,7 +40,7 @@ WORKDIR /app
 # Install system dependencies
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    unzip=6.0-* \
+    unzip \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -62,7 +62,7 @@ WORKDIR /app
 
 # Install ca-certificates for HTTPS requests
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates=20230311 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

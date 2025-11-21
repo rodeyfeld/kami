@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Smooth HTMX transitions */
+.htmx-swapping {
+  opacity: 0.95;
+  transition: opacity 200ms ease-out;
+}
+
+.htmx-settling {
+  opacity: 1;
+  transition: opacity 200ms ease-in;
+}
+
 /* Custom animations */
 @keyframes fadeIn {
 	from {
@@ -67,29 +78,12 @@ button, a, .card {
 	background: oklch(var(--pf));
 }
 
-/* Text gradient animation */
-@keyframes gradient-text-shift {
-	0%, 100% {
-		background-position: 0% 50%;
-	}
-	50% {
-		background-position: 100% 50%;
-	}
-}
-
+/* Simple gradient text */
 .gradient-text-animated {
-	background: linear-gradient(
-		90deg,
-		oklch(var(--p)),
-		oklch(var(--s)),
-		oklch(var(--a)),
-		oklch(var(--p))
-	);
-	background-size: 200% auto;
+	background: linear-gradient(to right, #60a5fa, #a78bfa);
 	-webkit-background-clip: text;
 	-webkit-text-fill-color: transparent;
 	background-clip: text;
-	animation: gradient-text-shift 3s ease infinite;
 }
 
 /* Smooth page transitions */
@@ -99,7 +93,7 @@ button, a, .card {
 	}
 }
 
-/* Card animations on hover */
+/* Clean cards */
 .card {
 	will-change: transform;
 }
