@@ -1,43 +1,66 @@
 package health
 
-import "kami/internal/components/layout"
-import "kami/internal/monitor"
-import "fmt"
+import (
+	"fmt"
+	"kami/internal/components/layout"
+	"kami/internal/monitor"
+)
 
 templ Dashboard(mode string) {
 	@layout.Base("Health Dashboard") {
-	<div class="space-y-6">
-		<!-- Mode indicator -->
-		<div class="bg-info/10 border border-info/30 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
-			if mode == "kubernetes" {
-				<span class="badge badge-sm badge-info">☸️ Kubernetes</span>
-				<span class="text-info">Monitoring galaxy namespace</span>
-			} else if mode == "docker" {
-				<span class="badge badge-sm badge-info">🐳 Docker</span>
-				<span class="text-info">Local development mode</span>
-			} else {
-				<span class="badge badge-sm badge-warning">⚠️ Standalone</span>
-				<span class="text-warning">No monitoring backend</span>
-			}
-		</div>
-			
-		<!-- Auto-refresh status section -->
-		<div 
-			hx-get="/api/status" 
-			hx-trigger="load, every 10s"
-			hx-swap="innerHTML"
-		>
-			<div class="flex justify-center items-center py-12">
-				<span class="loading loading-spinner loading-lg text-primary"></span>
-				<span class="ml-4 text-base-content/70">
-					if mode == "docker" {
-						Loading container status...
-					} else {
-						Loading cluster status...
-					}
-				</span>
+		<div class="space-y-6">
+			<!-- Mode indicator -->
+			<div class="bg-info/10 border border-info/30 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
+				if mode == "kubernetes" {
+					<span class="badge badge-sm badge-info">☸️ Kubernetes</span>
+					<span class="text-info">Monitoring galaxy namespace</span>
+				} else if mode == "docker" {
+					<span class="badge badge-sm badge-info">🐳 Docker</span>
+					<span class="text-info">Local development mode</span>
+				} else {
+					<span class="badge badge-sm badge-warning">⚠️ Standalone</span>
+					<span class="text-warning">No monitoring backend</span>
+				}
 			</div>
-		</div>
+			<!-- Static Tab Structure -->
+			<div class="space-y-8">
+				<div role="tablist" class="tabs tabs-lifted tabs-lg">
+					<!-- Services Tab -->
+					<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Services" checked="checked"/>
+					<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+						<!-- Polling for Services Table -->
+						<div
+							hx-get="/api/status"
+							hx-trigger="load, every 10s"
+							hx-select="#services-table-container"
+							hx-swap="outerHTML"
+						>
+							<div class="flex justify-center py-8">
+								<span class="loading loading-spinner loading-md"></span>
+							</div>
+						</div>
+					</div>
+					<!-- Infrastructure Tab -->
+					<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Infrastructure"/>
+					<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+						<!-- Polling for Infrastructure Table -->
+						<div
+							hx-get="/api/status"
+							hx-trigger="load, every 10s"
+							hx-select="#infra-table-container"
+							hx-swap="outerHTML"
+						>
+							<div class="flex justify-center py-8">
+								<span class="loading loading-spinner loading-md"></span>
+							</div>
+						</div>
+					</div>
+				</div>
+				<!-- Last Updated -->
+				<div class="text-center text-base-content/50 text-sm">
+					Last updated: <span id="last-update">just now</span> • Auto-refresh every 10s
+				</div>
+			</div>
 		</div>
 	}
 }
@@ -45,7 +68,7 @@ templ Dashboard(mode string) {
 templ StandaloneMode() {
 	<div class="alert alert-warning shadow-lg">
 		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
 		</svg>
 		<div>
 			<h3 class="font-bold">Standalone Mode</h3>
@@ -57,7 +80,7 @@ templ StandaloneMode() {
 templ ErrorState(message string) {
 	<div class="alert alert-error shadow-lg">
 		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 		</svg>
 		<div>
 			<h3 class="font-bold">Error</h3>
@@ -67,23 +90,17 @@ templ ErrorState(message string) {
 }
 
 templ StatusCards(status *monitor.Status, mode string) {
-	<div class="space-y-8">
-		<div role="tablist" class="tabs tabs-lifted tabs-lg">
-			<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Services" checked />
-			<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
-				@ResourceTable(filterResources(status.Resources, "Service"), mode)
-			</div>
-
-			<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Infrastructure" />
-			<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
-				@ResourceTable(filterResources(status.Resources, "Infrastructure"), mode)
-			</div>
-		</div>
-
-		<!-- Last Updated -->
-		<div class="text-center text-base-content/50 text-sm">
-			Last updated: <span id="last-update">just now</span> • Auto-refresh every 10s
-		</div>
+	<!-- We wrap the response in a div that matches hx-select if needed, but we target specific IDs below -->
+	<div class="hidden">
+		<!-- This wrapper ensures we don't return multiple root elements if that matters, though templ handles it -->
+	</div>
+	<!-- Services Table Container -->
+	<div id="services-table-container" hx-get="/api/status" hx-trigger="every 10s" hx-select="#services-table-container" hx-swap="outerHTML">
+		@ResourceTable(filterResources(status.Resources, "Service"), mode)
+	</div>
+	<!-- Infrastructure Table Container -->
+	<div id="infra-table-container" hx-get="/api/status" hx-trigger="every 10s" hx-select="#infra-table-container" hx-swap="outerHTML">
+		@ResourceTable(filterResources(status.Resources, "Infrastructure"), mode)
 	</div>
 }
 
@@ -147,7 +164,7 @@ templ ResourceRow(resource monitor.Resource, mode string) {
 			<td>
 				if resource.Desired > 0 && resource.Type != "Job" {
 					<div class="flex items-center gap-2">
-						<progress 
+						<progress
 							class={ "progress progress-sm w-20", getProgressColor(resource.State) }
 							value={ fmt.Sprintf("%d", resource.Current) }
 							max={ fmt.Sprintf("%d", resource.Desired) }
