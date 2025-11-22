@@ -13,7 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN go install github.com/a-h/templ/cmd/templ@v0.3.960
 
 # Install bun from official image
+# Copy bun runtime (both bun + bunx helper) for frontend asset builds
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1 /usr/local/bin/bunx /usr/local/bin/bunx
 
 # Copy dependency files
 COPY go.mod go.sum package.json ./
