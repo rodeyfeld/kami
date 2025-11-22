@@ -40,22 +40,23 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	}
 
 	for _, dep := range deployments.Items {
+		desiredReplicas := getInt32(dep.Spec.Replicas, 1)
 		svcStatus := ServiceStatus{
 			Name:              dep.Name,
 			Type:              "Deployment",
-			DesiredReplicas:   *dep.Spec.Replicas,
+			DesiredReplicas:   desiredReplicas,
 			ReadyReplicas:     dep.Status.ReadyReplicas,
 			AvailableReplicas: dep.Status.AvailableReplicas,
 		}
 
 		// Determine health status
-		if dep.Status.ReadyReplicas == *dep.Spec.Replicas && dep.Status.AvailableReplicas == *dep.Spec.Replicas {
+		if dep.Status.ReadyReplicas == desiredReplicas && dep.Status.AvailableReplicas == desiredReplicas {
 			svcStatus.Status = "Healthy"
 			svcStatus.Message = "All replicas ready"
 			status.HealthyCount++
 		} else if dep.Status.ReadyReplicas > 0 {
 			svcStatus.Status = "Degraded"
-			svcStatus.Message = fmt.Sprintf("%d/%d replicas ready", dep.Status.ReadyReplicas, *dep.Spec.Replicas)
+			svcStatus.Message = fmt.Sprintf("%d/%d replicas ready", dep.Status.ReadyReplicas, desiredReplicas)
 			status.DegradedCount++
 		} else {
 			svcStatus.Status = "Unhealthy"
@@ -73,21 +74,22 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	}
 
 	for _, sts := range statefulSets.Items {
+		desiredReplicas := getInt32(sts.Spec.Replicas, 1)
 		svcStatus := ServiceStatus{
 			Name:              sts.Name,
 			Type:              "StatefulSet",
-			DesiredReplicas:   *sts.Spec.Replicas,
+			DesiredReplicas:   desiredReplicas,
 			ReadyReplicas:     sts.Status.ReadyReplicas,
-			AvailableReplicas: sts.Status.ReadyReplicas, // StatefulSets don't have AvailableReplicas
+			AvailableReplicas: sts.Status.ReadyReplicas, // StatefulSets don't have AvailableReplicas in older versions
 		}
 
-		if sts.Status.ReadyReplicas == *sts.Spec.Replicas {
+		if sts.Status.ReadyReplicas == desiredReplicas {
 			svcStatus.Status = "Healthy"
 			svcStatus.Message = "All replicas ready"
 			status.HealthyCount++
 		} else if sts.Status.ReadyReplicas > 0 {
 			svcStatus.Status = "Degraded"
-			svcStatus.Message = fmt.Sprintf("%d/%d replicas ready", sts.Status.ReadyReplicas, *sts.Spec.Replicas)
+			svcStatus.Message = fmt.Sprintf("%d/%d replicas ready", sts.Status.ReadyReplicas, desiredReplicas)
 			status.DegradedCount++
 		} else {
 			svcStatus.Status = "Unhealthy"
@@ -105,22 +107,24 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	}
 
 	for _, job := range jobs.Items {
+		completions := getInt32(job.Spec.Completions, 1)
 		svcStatus := ServiceStatus{
 			Name:            job.Name,
 			Type:            "Job",
-			DesiredReplicas: *job.Spec.Completions,
+			DesiredReplicas: completions,
 		}
 
 		if job.Status.Succeeded > 0 {
 			svcStatus.Status = "Healthy"
-			svcStatus.Message = fmt.Sprintf("Completed %d/%d", job.Status.Succeeded, *job.Spec.Completions)
+			svcStatus.Message = fmt.Sprintf("Completed %d/%d", job.Status.Succeeded, completions)
 			svcStatus.ReadyReplicas = job.Status.Succeeded
 			status.HealthyCount++
 		} else if job.Status.Active > 0 {
 			svcStatus.Status = "Running"
 			svcStatus.Message = fmt.Sprintf("Active: %d", job.Status.Active)
 			svcStatus.ReadyReplicas = job.Status.Active
-			status.DegradedCount++
+			// Running jobs are healthy/working as intended
+			status.HealthyCount++
 		} else if job.Status.Failed > 0 {
 			svcStatus.Status = "Unhealthy"
 			svcStatus.Message = fmt.Sprintf("Failed: %d", job.Status.Failed)
@@ -130,6 +134,9 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 			svcStatus.Status = "Unknown"
 			svcStatus.Message = "Pending"
 			svcStatus.ReadyReplicas = 0
+			// Treat pending/unknown as neutral or degraded depending on preference,
+			// but let's not count them as healthy
+			status.DegradedCount++
 		}
 
 		status.Services = append(status.Services, svcStatus)
@@ -138,4 +145,11 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 	status.TotalServices = len(status.Services)
 
 	return status, nil
+}
+
+func getInt32(ptr *int32, def int32) int32 {
+	if ptr != nil {
+		return *ptr
+	}
+	return def
 }

@@ -15,6 +15,6 @@ func Start() {
 	routes.Setup(s)
 
 	if err := s.Start(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }
