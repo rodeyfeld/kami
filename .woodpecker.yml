@@ -5,12 +5,6 @@ variables:
     password:
       from_secret: docker_password
 
-  - &deploy_creds
-    image: bitnami/kubectl
-    environment:
-      KUBECONFIG_BASE64:
-        from_secret: kubeconfig
-
 steps:
   build:
     image: woodpeckerci/plugin-docker-buildx
@@ -23,10 +17,9 @@ steps:
         branch: main
 
   deploy:
-    <<: *deploy_creds
+    image: bitnami/kubectl
     commands:
-      - echo $KUBECONFIG_BASE64 | base64 -d > /tmp/kubeconfig
-      - kubectl --kubeconfig=/tmp/kubeconfig rollout restart deployment/kami -n galaxy
+      - kubectl rollout restart deployment/kami -n galaxy
     when:
       - event: [push, manual]
         branch: main
