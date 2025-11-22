@@ -16,35 +16,58 @@ func NewK8sMonitor(c *k8s.Client) *K8sMonitor {
 
 func (m *K8sMonitor) GetMode() string { return "kubernetes" }
 
-// isPublicService filters out sensitive internal infrastructure
-func isPublicService(name string) bool {
-	// List of public-facing services that are safe to display
+// getCategory classifies a service into "Public" or "Infrastructure"
+func getCategory(name string) string {
+	// Main user-facing applications
 	publicServices := []string{
 		"luna",      // Frontend
 		"augur",     // API
 		"doppler",   // Blog
-		"kami",      // This monitoring service
-		"dreamflow", // Airflow (has its own auth)
+		"kami",      // Monitoring
+		"dreamflow", // Airflow
+		"enchiridion", // Infisical (Secrets)
 	}
 
-	// Check if it's in the public list
 	for _, public := range publicServices {
-		if strings.HasPrefix(name, public) {
+		if strings.HasPrefix(name, public) && !isInfrastructureComponent(name) {
+			return "Service"
+		}
+	}
+
+	// Infrastructure components (DBs, Queues, Storage)
+	if isInfrastructureComponent(name) {
+		return "Infrastructure"
+	}
+
+	return "Other"
+}
+
+func isInfrastructureComponent(name string) bool {
+	nameLower := strings.ToLower(name)
+	
+	// Explicit infrastructure services
+	infrastructureServices := []string{
+		"atlas",
+		"garage",
+		"postgres",
+		"redis",
+		"rabbitmq",
+	}
+
+	for _, infra := range infrastructureServices {
+		if strings.Contains(nameLower, infra) {
 			return true
 		}
 	}
 
-	// Hide internal infrastructure
-	hideKeywords := []string{
-		"redis", "postgres", "atlas", "garage",
-		"worker", "scheduler", "flower", "beat",
-		"db", "database", "cache", "queue",
+	// Helper components often associated with main apps
+	helperKeywords := []string{
+		"worker", "scheduler", "flower", "beat", "db", "cache", "queue",
 	}
 
-	nameLower := strings.ToLower(name)
-	for _, keyword := range hideKeywords {
+	for _, keyword := range helperKeywords {
 		if strings.Contains(nameLower, keyword) {
-			return false
+			return true
 		}
 	}
 
@@ -64,10 +87,12 @@ func (m *K8sMonitor) GetStatus(ctx context.Context) (*Status, error) {
 		UnhealthyCount: 0,
 	}
 
-	// Filter and count only public services
 	for _, s := range k8s.Services {
-		if !isPublicService(s.Name) {
-			continue
+		category := getCategory(s.Name)
+		
+		// Determine label based on category
+		if category == "Infrastructure" {
+			// Optional: add specific labels if needed
 		}
 
 		resource := Resource{
@@ -77,7 +102,10 @@ func (m *K8sMonitor) GetStatus(ctx context.Context) (*Status, error) {
 			Status:  s.Message,
 			Current: s.ReadyReplicas,
 			Desired: s.DesiredReplicas,
-			Labels:  map[string]string{"namespace": m.client.Namespace},
+			Labels:  map[string]string{
+				"namespace": m.client.Namespace,
+				"category": category,
+			},
 		}
 		status.Resources = append(status.Resources, resource)
 

@@ -67,47 +67,55 @@ templ ErrorState(message string) {
 }
 
 templ StatusCards(status *monitor.Status, mode string) {
-	<div class="space-y-6">
-		<!-- Resource Details -->
-		<div class="space-y-4">
-			<div class="flex items-center gap-3">
-				<h2 class="text-2xl font-bold">
-					if mode == "docker" {
-						Containers
-					} else {
-						Resources
-					}
-				</h2>
-				<span class="badge badge-lg badge-primary">{ fmt.Sprintf("%d", status.TotalCount) }</span>
+	<div class="space-y-8">
+		<div role="tablist" class="tabs tabs-lifted tabs-lg">
+			<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Services" checked />
+			<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+				@ResourceTable(filterResources(status.Resources, "Service"), mode)
 			</div>
-		<div class="overflow-x-auto">
-			<table class="table table-zebra w-full">
-				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Type</th>
-						if mode == "docker" {
-							<th>Project</th>
-						} else {
-							<th>Replicas</th>
-						}
-						<th>Status</th>
-						<th>Info</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, resource := range status.Resources {
-						@ResourceRow(resource, mode)
-					}
-				</tbody>
-			</table>
+
+			<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Infrastructure" />
+			<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
+				@ResourceTable(filterResources(status.Resources, "Infrastructure"), mode)
+			</div>
 		</div>
-	</div>
 
 		<!-- Last Updated -->
 		<div class="text-center text-base-content/50 text-sm">
 			Last updated: <span id="last-update">just now</span> • Auto-refresh every 10s
 		</div>
+	</div>
+}
+
+templ ResourceTable(resources []monitor.Resource, mode string) {
+	<div class="overflow-x-auto">
+		<table class="table table-zebra w-full">
+			<thead>
+				<tr>
+					<th>Name</th>
+					<th>Type</th>
+					if mode == "docker" {
+						<th>Project</th>
+					} else {
+						<th>Replicas</th>
+					}
+					<th>Status</th>
+					<th>Info</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, resource := range resources {
+					@ResourceRow(resource, mode)
+				}
+				if len(resources) == 0 {
+					<tr>
+						<td colspan="5" class="text-center py-8 text-base-content/50">
+							No resources found in this category.
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
 	</div>
 }
 
@@ -195,7 +203,7 @@ func getProgressColor(status string) string {
 }
 
 func getServiceIconClass(name string) string {
-	// Match service names to their icons from the Doppler homepage
+	// Match service names to their icons
 	switch {
 	case name == "doppler":
 		return "fa-solid fa-record-vinyl text-primary"
@@ -204,11 +212,31 @@ func getServiceIconClass(name string) string {
 	case name == "luna":
 		return "fa-solid fa-map text-primary"
 	case name == "dreamflow-webserver":
-		return "fa-solid fa-cloud text-secondary"
+		return "fa-solid fa-wind text-secondary"
 	case name == "kami":
 		return "fa-solid fa-heart-pulse text-error"
+	case name == "enchiridion" || name == "infisical":
+		return "fa-solid fa-key text-warning"
+	case name == "garage":
+		return "fa-solid fa-hard-drive text-info"
+	case name == "atlas" || name == "postgres":
+		return "fa-solid fa-database text-accent"
+	case name == "redis":
+		return "fa-solid fa-server text-error"
 	default:
 		return "fa-solid fa-circle text-base-content/50"
 	}
 }
 
+func filterResources(resources []monitor.Resource, category string) []monitor.Resource {
+	filtered := make([]monitor.Resource, 0)
+	for _, r := range resources {
+		cat := r.Labels["category"]
+		if category == "Service" && (cat == "Service" || cat == "") {
+			filtered = append(filtered, r)
+		} else if category == "Infrastructure" && (cat == "Infrastructure" || cat == "Other") {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
