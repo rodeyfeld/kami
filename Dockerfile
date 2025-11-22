@@ -9,10 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install templ and bun for building assets
+# Install templ
 RUN go install github.com/a-h/templ/cmd/templ@v0.3.960
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
+
+# Install bun from official image
+COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
 
 # Copy dependency files
 COPY go.mod go.sum package.json ./
@@ -49,9 +50,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN go install github.com/air-verse/air@v1.52.3 && \
     go install github.com/a-h/templ/cmd/templ@v0.3.960
 
-# Install bun for JavaScript bundling
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
+# Install bun from official image
+COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
 
 CMD ["air"]
 
