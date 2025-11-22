@@ -26,6 +26,7 @@ func getCategory(name string) string {
 		"kami",      // Monitoring
 		"dreamflow", // Airflow
 		"enchiridion", // Infisical (Secrets)
+		"ouroboros",   // Woodpecker CI
 	}
 
 	for _, public := range publicServices {
