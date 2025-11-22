@@ -17,7 +17,7 @@ services:
     networks:
       - kami-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/livez || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
