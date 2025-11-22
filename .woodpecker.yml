@@ -19,7 +19,7 @@ steps:
       auto_tag: true
       <<: *docker_creds
     when:
-      - event: push
+      - event: [push, manual]
         branch: main
 
   deploy:
@@ -28,5 +28,5 @@ steps:
       - echo $KUBECONFIG_BASE64 | base64 -d > /tmp/kubeconfig
       - kubectl --kubeconfig=/tmp/kubeconfig rollout restart deployment/kami -n galaxy
     when:
-      - event: push
+      - event: [push, manual]
         branch: main
