@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     ca-certificates \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install templ
@@ -47,7 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     ca-certificates \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go tools with pinned versions
