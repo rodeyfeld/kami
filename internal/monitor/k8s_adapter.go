@@ -20,13 +20,13 @@ func (m *K8sMonitor) GetMode() string { return "kubernetes" }
 func getCategory(name string) string {
 	// Main user-facing applications
 	publicServices := []string{
-		"luna",      // Frontend
-		"augur",     // API
-		"doppler",   // Blog
-		"kami",      // Monitoring
-		"dreamflow", // Airflow
-		"enchiridion", // Infisical (Secrets)
-		"ouroboros",   // Woodpecker CI
+		"luna",       // Frontend
+		"augur",      // API
+		"doppler",    // Blog
+		"kami",       // Monitoring
+		"noctis",     // Prefect workflows
+		"oracle",     // Scheduled jobs
+		"ouroboros",  // Woodpecker CI
 	}
 
 	for _, public := range publicServices {
@@ -50,9 +50,11 @@ func isInfrastructureComponent(name string) bool {
 	infrastructureServices := []string{
 		"atlas",
 		"garage",
+		"cuneiform",
 		"postgres",
 		"redis",
 		"rabbitmq",
+		"prefect-server",
 	}
 
 	for _, infra := range infrastructureServices {

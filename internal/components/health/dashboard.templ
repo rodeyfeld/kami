@@ -2,6 +2,7 @@ package health
 
 import (
 	"fmt"
+	"strings"
 	"kami/internal/components/layout"
 	"kami/internal/monitor"
 )
@@ -220,27 +221,33 @@ func getProgressColor(status string) string {
 }
 
 func getServiceIconClass(name string) string {
-	// Match service names to their icons
+	// Match service names to their icons using prefix matching for flexibility
 	switch {
-	case name == "doppler":
+	case strings.HasPrefix(name, "doppler"):
 		return "fa-solid fa-record-vinyl text-primary"
-	case name == "augur":
+	case strings.HasPrefix(name, "augur"):
 		return "fa-solid fa-satellite text-secondary"
-	case name == "luna":
+	case strings.HasPrefix(name, "luna"):
 		return "fa-solid fa-map text-primary"
-	case name == "dreamflow-webserver":
-		return "fa-solid fa-wind text-secondary"
-	case name == "kami":
+	case strings.HasPrefix(name, "kami"):
 		return "fa-solid fa-heart-pulse text-error"
-	case name == "enchiridion" || name == "infisical":
-		return "fa-solid fa-key text-warning"
-	case name == "ouroboros" || name == "woodpecker":
-		return "fa-solid fa-infinity text-success"
-	case name == "garage":
-		return "fa-solid fa-hard-drive text-info"
-	case name == "atlas" || name == "postgres":
+	case strings.HasPrefix(name, "noctis-prefect") || strings.HasPrefix(name, "prefect"):
+		return "fa-solid fa-server text-info"
+	case strings.HasPrefix(name, "noctis-postgres"):
 		return "fa-solid fa-database text-accent"
-	case name == "redis":
+	case strings.HasPrefix(name, "noctis"):
+		return "fa-solid fa-moon text-secondary"
+	case strings.HasPrefix(name, "oracle"):
+		return "fa-solid fa-clock text-warning"
+	case strings.HasPrefix(name, "cuneiform"):
+		return "fa-solid fa-key text-warning"
+	case strings.HasPrefix(name, "ouroboros"):
+		return "fa-solid fa-infinity text-success"
+	case strings.HasPrefix(name, "garage"):
+		return "fa-solid fa-hard-drive text-info"
+	case strings.HasPrefix(name, "atlas") || strings.HasPrefix(name, "postgres"):
+		return "fa-solid fa-database text-accent"
+	case strings.HasPrefix(name, "redis"):
 		return "fa-solid fa-server text-error"
 	default:
 		return "fa-solid fa-circle text-base-content/50"

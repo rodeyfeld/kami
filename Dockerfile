@@ -54,6 +54,7 @@ RUN go install github.com/air-verse/air@v1.52.3 && \
 
 # Install bun from official image
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1 /usr/local/bin/bunx /usr/local/bin/bunx
 
 CMD ["air"]
 

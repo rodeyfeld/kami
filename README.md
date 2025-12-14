@@ -34,9 +34,9 @@ kubectl rollout restart deployment/kami -n galaxy
 Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX makes it interactive with auto-refreshing status updates every 10 seconds.
 
 Uses the official Kubernetes Go client (`client-go`) to monitor:
-- **Deployments** - Check replica health for augur, luna, doppler, dreamflow components, etc.
-- **StatefulSets** - Monitor atlas (PostgreSQL), dreamflow-redis
-- **Jobs** - Track oracle and migration job statuses
+- **Deployments** - Check replica health for augur, luna, doppler, noctis, ouroboros, etc.
+- **StatefulSets** - Monitor atlas (PostgreSQL), garage, cuneiform
+- **Jobs** - Track oracle and other scheduled job statuses
 
 Air watches for changes and automatically rebuilds everything - runs `templ generate` for templates, `bun run build:js` for JavaScript, and `bun run build:css` for Tailwind. Then restarts the Go app.
 
