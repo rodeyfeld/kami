@@ -58,6 +58,11 @@ curl https://kami.pinwheel.fan/api/deploys
 - **Image:** every image is pushed as `:latest`, so kami compares the image digest each revision's pods pulled. "same build" means a restart picked up the old image, which usually means the build step didn't push.
 - **Pipeline steps:** Woodpecker runs each step as a `wp-*` pod in `galaxy`. kami polls every 5 seconds and remembers steps for 6 hours after Woodpecker deletes their pods.
 
+- **Pipelines:** kami follows ouroboros (Woodpecker) through its event stream at `http://ouroboros-service:8001`, so builds show up as they start, including failed builds that never reach the cluster. A failed step shows the last 20 lines of its log. A pipeline that has waited over 2 minutes to start is flagged as queued, which usually means the agent can't create pods.
+- **Which pipeline caused a rollout:** a rollout is matched to the pipeline whose step was running when its ReplicaSet was created. kami prefers the workload's own repo, so a match from another repo is mirage restarting everything. "manual" means no step was running then.
+
+Woodpecker serves public repos to anonymous readers, so kami holds no CI token. Private repos (mycelia) are invisible to it and their rollouts show as manual. Set `KAMI_WOODPECKER_URL=off` to disable this, or point it elsewhere; `KAMI_WOODPECKER_PUBLIC_URL` sets the base for links. If Woodpecker is unreachable, the page falls back to the step pods it saw in the cluster.
+
 Digests, ready times and steps are remembered in memory, so they reset when kami restarts. Revisions from before then show without a digest. StatefulSets only appear while rolling, since their history lives in ControllerRevisions. StatefulSets with the `OnDelete` update strategy (noctis-postgres) show as "Waits for pod delete" when their spec changes, since their pods only update when deleted.
 
 ## What's in it

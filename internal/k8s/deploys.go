@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"kami/internal/woodpecker"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,6 +59,11 @@ type Rollout struct {
 	// so these are the only way to tell whether a restart picked up a new build.
 	Digest     string `json:"digest,omitempty"`
 	PrevDigest string `json:"prev_digest,omitempty"`
+
+	// The Woodpecker pipeline that was running when this revision was created. Unmatched is set when
+	// kami has pipeline history for that time and none was running, i.e. a manual restart or a private repo.
+	Pipeline  *woodpecker.PipelineView `json:"pipeline,omitempty"`
+	Unmatched bool                     `json:"unmatched,omitempty"`
 }
 
 // ImageChanged is nil when kami doesn't know both digests
@@ -102,10 +109,12 @@ func (s *Step) Done() bool {
 }
 
 type Deploys struct {
-	Rollouts  []Rollout `json:"rollouts"` // in-progress first, then newest first
-	Steps     []Step    `json:"steps"`    // newest first
-	Error     string    `json:"error,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Rollouts  []Rollout                 `json:"rollouts"`            // in-progress first, then newest first
+	Steps     []Step                    `json:"steps"`               // step pods kami saw, newest first
+	Pipelines []woodpecker.PipelineView `json:"pipelines,omitempty"` // from Woodpecker, newest first
+	CI        *woodpecker.Status        `json:"ci,omitempty"`        // nil when kami isn't reading Woodpecker
+	Error     string                    `json:"error,omitempty"`
+	UpdatedAt time.Time                 `json:"updated_at"`
 }
 
 // DeployWatcher polls the namespace for rollouts and pipeline steps. It runs in the background

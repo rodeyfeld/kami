@@ -3,6 +3,8 @@ package monitor
 import (
 	"context"
 	"kami/internal/k8s"
+	"kami/internal/woodpecker"
+	"os"
 	"strings"
 	"time"
 )
@@ -11,12 +13,30 @@ type K8sMonitor struct {
 	client  *k8s.Client
 	pinger  *k8s.Pinger
 	deploys *k8s.DeployWatcher
+	ci      *woodpecker.Tracker // nil when KAMI_WOODPECKER_URL is "off"
 }
+
+const recentPipelines = 15
 
 func NewK8sMonitor(c *k8s.Client) *K8sMonitor {
 	deploys := k8s.NewDeployWatcher(c)
 	deploys.Start(context.Background())
-	return &K8sMonitor{client: c, pinger: k8s.NewPinger(c), deploys: deploys}
+	m := &K8sMonitor{client: c, pinger: k8s.NewPinger(c), deploys: deploys}
+
+	// ouroboros serves public repos to anonymous readers, so this needs no token
+	if url := envOr("KAMI_WOODPECKER_URL", "http://ouroboros-service:8001"); url != "off" {
+		public := envOr("KAMI_WOODPECKER_PUBLIC_URL", "https://ouroboros.pinwheel.fan")
+		m.ci = woodpecker.NewTracker(woodpecker.NewClient(url), public)
+		m.ci.Start(context.Background())
+	}
+	return m
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 func (m *K8sMonitor) GetMode() string { return "kubernetes" }
@@ -30,7 +50,27 @@ func (m *K8sMonitor) PingAll(ctx context.Context) ([]*k8s.PingResult, error) {
 }
 
 func (m *K8sMonitor) Deploys(ctx context.Context) (*k8s.Deploys, error) {
-	return m.deploys.Snapshot(ctx), nil
+	snapshot := m.deploys.Snapshot(ctx)
+	if m.ci == nil {
+		return snapshot, nil
+	}
+
+	// The snapshot is shared between requests, so annotate a copy
+	d := *snapshot
+	d.Rollouts = append([]k8s.Rollout(nil), snapshot.Rollouts...)
+	for i := range d.Rollouts {
+		r := &d.Rollouts[i]
+		// StatefulSet rows only know their pods' age, not when the revision was created
+		if r.Kind != "Deployment" {
+			continue
+		}
+		r.Pipeline, r.Unmatched = m.ci.Match(groupOf(r.Workload), r.StartedAt)
+		r.Unmatched = r.Pipeline == nil && r.Unmatched
+	}
+	d.Pipelines = m.ci.Recent(recentPipelines)
+	status := m.ci.Status()
+	d.CI = &status
+	return &d, nil
 }
 
 // groupOf treats the name up to the first dash as the project, so noctis-postgres groups under noctis

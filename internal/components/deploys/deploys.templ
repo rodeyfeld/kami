@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"kami/internal/components/layout"
 	"kami/internal/k8s"
+	"kami/internal/woodpecker"
 	"strings"
 	"time"
 )
@@ -30,8 +31,6 @@ templ Page() {
 					</div>
 				</section>
 				<section class="bg-base-100 border border-base-300 rounded-box p-6 xl:col-span-2">
-					<h2 class="text-lg font-semibold mb-1">Pipeline steps</h2>
-					<p class="text-sm text-base-content/50 mb-4">Woodpecker steps seen running in the cluster</p>
 					<div id="steps">
 						@spinner()
 					</div>
@@ -73,25 +72,40 @@ templ Content(d *k8s.Deploys) {
 		}
 	</div>
 	<div id="in-progress">
-		@InProgress(inProgress(d.Rollouts))
+		@InProgress(inProgress(d.Rollouts), activePipelines(d.Pipelines))
 	</div>
 	<div id="rollouts">
 		@RolloutTable(history(d.Rollouts))
 	</div>
 	<div id="steps">
-		@StepTable(d.Steps)
+		if d.CI != nil && len(d.Pipelines) > 0 {
+			<h2 class="text-lg font-semibold mb-1">Pipelines</h2>
+			<p class="text-sm text-base-content/50 mb-4">Recent Woodpecker runs across every public repo</p>
+			@ciWarning(d.CI)
+			@PipelineList(d.Pipelines)
+		} else {
+			<h2 class="text-lg font-semibold mb-1">Pipeline steps</h2>
+			<p class="text-sm text-base-content/50 mb-4">Woodpecker steps seen running in the cluster</p>
+			if d.CI != nil {
+				@ciWarning(d.CI)
+			}
+			@StepTable(d.Steps)
+		}
 	</div>
 	<span id="deploys-updated">{ d.UpdatedAt.Format("15:04:05 UTC") }</span>
 }
 
-templ InProgress(rollouts []k8s.Rollout) {
-	if len(rollouts) == 0 {
+templ InProgress(rollouts []k8s.Rollout, pipelines []woodpecker.PipelineView) {
+	if len(rollouts) == 0 && len(pipelines) == 0 {
 		<div class="bg-base-100 border border-base-300 rounded-box px-6 py-4 flex items-center gap-3 text-base-content/70">
 			<i class="fa-solid fa-circle-check text-success"></i>
 			<span>Nothing rolling out</span>
 		</div>
 	} else {
 		<div class="space-y-3">
+			for _, p := range pipelines {
+				@activePipeline(p)
+			}
 			for _, r := range rollouts {
 				<div class={ "bg-base-100 border rounded-box px-6 py-4", templ.KV("border-error", r.State == k8s.RolloutStuck), templ.KV("border-info", r.State == k8s.RolloutRolling) }>
 					<div class="flex flex-wrap items-center gap-3">
@@ -110,6 +124,11 @@ templ InProgress(rollouts []k8s.Rollout) {
 						<span class="text-sm font-mono">{ fmt.Sprintf("%d/%d ready", r.Ready, r.Desired) }</span>
 						<span class="text-sm text-base-content/50">{ "started " + k8s.HumanizeAge(time.Since(r.StartedAt)) }</span>
 					</div>
+					if r.Pipeline != nil {
+						<div class="mt-1 text-sm">
+							@pipelineRef(r.Pipeline, true)
+						</div>
+					}
 					if r.Reason != "" {
 						<div class="mt-2 text-sm font-mono text-error break-all">{ r.Reason }</div>
 					}
@@ -142,7 +161,15 @@ templ RolloutTable(rollouts []k8s.Rollout) {
 								if r.Trigger != "" {
 									{ " · " + r.Trigger }
 								}
+								if r.Unmatched {
+									<span title="No Woodpecker step was running when this revision was created: a manual kubectl restart or apply, or a private repo kami can't see">· manual</span>
+								}
 							</div>
+							if r.Pipeline != nil {
+								<div class="text-xs mt-0.5">
+									@pipelineRef(r.Pipeline, false)
+								</div>
+							}
 						</td>
 						<td class="text-sm whitespace-nowrap">
 							@result(r)
@@ -306,4 +333,145 @@ func shortDigest(digest string) string {
 		hex = hex[:12]
 	}
 	return hex
+}
+
+// pipelineRef links a rollout to the run that caused it. A run from another repo is mirage restarting everything.
+templ pipelineRef(p *woodpecker.PipelineView, withMessage bool) {
+	<a href={ templ.SafeURL(p.URL) } target="_blank" title={ p.Message } class="link link-hover text-base-content/70 inline-flex items-center gap-1 whitespace-nowrap">
+		<i class="fa-solid fa-code-commit text-base-content/40"></i>
+		<span class="font-mono">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</span>
+		<span class="font-mono text-base-content/50">{ p.Commit }</span>
+		if withMessage {
+			<span class="truncate max-w-md">{ p.Message }</span>
+		}
+	</a>
+}
+
+templ activePipeline(p woodpecker.PipelineView) {
+	<div class={ "bg-base-100 border rounded-box px-6 py-4", templ.KV("border-warning", p.Queued()), templ.KV("border-info", !p.Queued()) }>
+		<div class="flex flex-wrap items-center gap-3">
+			if p.Queued() {
+				<span class="badge badge-warning text-black font-semibold">Queued</span>
+			} else {
+				<span class="badge badge-info text-white font-semibold gap-1">
+					<span class="loading loading-spinner loading-xs"></span>
+					Building
+				</span>
+			}
+			<a href={ templ.SafeURL(p.URL) } target="_blank" class="link link-hover font-mono font-semibold">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</a>
+			<span class="font-mono text-sm text-base-content/50">{ p.Commit }</span>
+			<span class="text-sm truncate max-w-md" title={ p.Message }>{ p.Message }</span>
+			<span class="text-sm text-base-content/50">{ "created " + k8s.HumanizeAge(time.Since(p.Created)) }</span>
+		</div>
+		<div class="mt-2">
+			@stepChips(p.Steps)
+		</div>
+		if p.Queued() {
+			<div class="mt-2 text-sm text-warning">Waiting to start for over 2 minutes. Check that ouroboros-agent is running and can create pods.</div>
+		}
+	</div>
+}
+
+templ ciWarning(s *woodpecker.Status) {
+	if s.Error != "" {
+		<div class="alert alert-warning py-2 mb-4 text-sm">
+			<i class="fa-solid fa-triangle-exclamation"></i>
+			<span>
+				{ "Can't follow Woodpecker: " }
+				<span class="font-mono">{ s.Error }</span>
+			</span>
+		</div>
+	}
+}
+
+templ PipelineList(pipelines []woodpecker.PipelineView) {
+	<ul class="divide-y divide-base-300">
+		for _, p := range pipelines {
+			<li class="py-3">
+				<div class="flex items-center gap-2 text-sm">
+					@pipelineIcon(p.Status)
+					<a href={ templ.SafeURL(p.URL) } target="_blank" class="link link-hover font-mono font-semibold">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</a>
+					if p.CommitURL != "" {
+						<a href={ templ.SafeURL(p.CommitURL) } target="_blank" class="link link-hover font-mono text-base-content/50">{ p.Commit }</a>
+					}
+					<span class="ml-auto text-base-content/50 whitespace-nowrap" title={ p.Created.Format(time.RFC3339) }>{ k8s.HumanizeAge(time.Since(p.Created)) }</span>
+				</div>
+				<div class="text-sm text-base-content/80 truncate mt-0.5" title={ p.Message }>{ p.Message }</div>
+				<div class="flex items-center gap-2 mt-1">
+					@stepChips(p.Steps)
+					if p.Event != "push" {
+						<span class="badge badge-xs badge-ghost">{ p.Event }</span>
+					}
+				</div>
+				if p.FailedStep != "" && len(p.LogTail) > 0 {
+					<details class="mt-2" open?={ time.Since(p.Created) < time.Hour }>
+						<summary class="text-xs text-error cursor-pointer">{ "Last lines of " + p.FailedStep }</summary>
+						<pre class="mt-1 text-xs bg-base-300 rounded p-2 overflow-x-auto max-h-64">{ strings.Join(p.LogTail, "\n") }</pre>
+					</details>
+				}
+			</li>
+		}
+	</ul>
+}
+
+templ pipelineIcon(status string) {
+	switch status {
+		case "success":
+			<i class="fa-solid fa-check text-success w-4 text-center"></i>
+		case "failure", "error", "killed":
+			<i class="fa-solid fa-xmark text-error w-4 text-center"></i>
+		case "running":
+			<span class="loading loading-spinner loading-xs text-info"></span>
+		case "pending", "created":
+			<i class="fa-regular fa-clock text-warning w-4 text-center"></i>
+		default:
+			<i class="fa-solid fa-minus text-base-content/40 w-4 text-center" title={ status }></i>
+	}
+}
+
+templ stepChips(steps []woodpecker.StepView) {
+	<div class="flex flex-wrap gap-1">
+		for _, s := range steps {
+			<span class={ "badge badge-sm font-mono gap-1", stepClass(s.State) } title={ stepTitle(s) }>
+				{ s.Name }
+				if s.Duration != nil {
+					<span class="opacity-60">{ shortDuration(*s.Duration) }</span>
+				}
+			</span>
+		}
+	</div>
+}
+
+func activePipelines(pipelines []woodpecker.PipelineView) []woodpecker.PipelineView {
+	out := make([]woodpecker.PipelineView, 0)
+	for _, p := range pipelines {
+		if p.Running() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func stepClass(state string) string {
+	switch state {
+	case "success":
+		return "badge-success badge-outline"
+	case "failure", "error", "killed":
+		return "badge-error text-white"
+	case "running":
+		return "badge-info text-white"
+	default:
+		return "badge-ghost"
+	}
+}
+
+func stepTitle(s woodpecker.StepView) string {
+	switch {
+	case s.Error != "":
+		return s.State + ": " + s.Error
+	case s.ExitCode != 0:
+		return fmt.Sprintf("%s: exit %d", s.State, s.ExitCode)
+	default:
+		return s.State
+	}
 }
