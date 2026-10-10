@@ -78,12 +78,9 @@ button, a, .card {
 	background: oklch(var(--pf));
 }
 
-/* Simple gradient text */
-.gradient-text-animated {
-	background: linear-gradient(to right, #60a5fa, #a78bfa);
-	-webkit-background-clip: text;
-	-webkit-text-fill-color: transparent;
-	background-clip: text;
+/* Wordmark */
+.wordmark {
+	color: #60a5fa;
 }
 
 /* Smooth page transitions */
