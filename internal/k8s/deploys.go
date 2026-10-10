@@ -37,6 +37,7 @@ const (
 	RolloutStuck      = "stuck"
 	RolloutDone       = "done"
 	RolloutSuperseded = "superseded" // an older revision, kept for history
+	RolloutWaiting    = "waiting"    // an OnDelete StatefulSet whose pods keep the old revision until someone deletes them
 )
 
 // Rollout is one revision of a workload: each `rollout restart` or spec change makes a new one
@@ -339,6 +340,10 @@ func statefulSetRollouts(statefulSets []appsv1.StatefulSet, pods []corev1.Pod) [
 		}
 		if reason := stuckReason(owned); reason != "" {
 			r.State, r.Reason = RolloutStuck, reason
+		} else if sts.Spec.UpdateStrategy.Type == appsv1.OnDeleteStatefulSetStrategyType && ready >= desired {
+			// Nothing will happen on its own, so this isn't in progress, e.g. mirage's restart-everything step
+			r.State = RolloutWaiting
+			r.Reason = "OnDelete update strategy: pods keep the old revision until they're deleted"
 		}
 		rollouts = append(rollouts, r)
 	}

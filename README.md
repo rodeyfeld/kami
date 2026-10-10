@@ -58,7 +58,7 @@ curl https://kami.pinwheel.fan/api/deploys
 - **Image:** every image is pushed as `:latest`, so kami compares the image digest each revision's pods pulled. "same build" means a restart picked up the old image, which usually means the build step didn't push.
 - **Pipeline steps:** Woodpecker runs each step as a `wp-*` pod in `galaxy`. kami polls every 5 seconds and remembers steps for 6 hours after Woodpecker deletes their pods.
 
-Digests, ready times and steps are remembered in memory, so they reset when kami restarts. Revisions from before then show without a digest. StatefulSets only appear while rolling, since their history lives in ControllerRevisions.
+Digests, ready times and steps are remembered in memory, so they reset when kami restarts. Revisions from before then show without a digest. StatefulSets only appear while rolling, since their history lives in ControllerRevisions. StatefulSets with the `OnDelete` update strategy (noctis-postgres) show as "Waits for pod delete" when their spec changes, since their pods only update when deleted.
 
 ## What's in it
 

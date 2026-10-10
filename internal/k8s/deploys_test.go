@@ -219,3 +219,29 @@ func TestMissingReplicaSetPermissionIsExplained(t *testing.T) {
 		t.Fatalf("got %+v", d)
 	}
 }
+
+func TestOnDeleteStatefulSetWaitsInsteadOfRolling(t *testing.T) {
+	replicas := int32(1)
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "noctis-postgres", Namespace: ns, UID: "sts-uid", CreationTimestamp: metav1.NewTime(t0)},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas:       &replicas,
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{Type: appsv1.OnDeleteStatefulSetStrategyType},
+		},
+		Status: appsv1.StatefulSetStatus{CurrentRevision: "noctis-postgres-1", UpdateRevision: "noctis-postgres-2"},
+	}
+	controller := true
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "noctis-postgres-0", Namespace: ns,
+			OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", UID: sts.UID, Controller: &controller}},
+		},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+	}
+	w, _ := watcher(sts, p)
+
+	r := findRollout(t, w.Refresh(context.Background()), "noctis-postgres", 0)
+	if r.State != RolloutWaiting || r.InProgress() {
+		t.Fatalf("got %+v", r)
+	}
+}

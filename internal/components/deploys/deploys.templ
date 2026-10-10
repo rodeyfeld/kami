@@ -175,6 +175,8 @@ templ result(r k8s.Rollout) {
 			}
 		case k8s.RolloutSuperseded:
 			<span class="badge badge-sm badge-ghost">Replaced</span>
+		case k8s.RolloutWaiting:
+			<span class="badge badge-sm badge-warning badge-outline" title={ r.Reason }>Waits for pod delete</span>
 		default:
 			<span class="badge badge-sm badge-info text-white">{ r.State }</span>
 	}
