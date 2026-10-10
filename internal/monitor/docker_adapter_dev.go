@@ -5,6 +5,8 @@ package monitor
 import (
 	"context"
 	"kami/internal/docker"
+	"kami/internal/k8s"
+	"time"
 )
 
 type DockerMonitor struct {
@@ -17,6 +19,14 @@ func NewDockerMonitor(c *docker.Client) *DockerMonitor {
 
 func (m *DockerMonitor) GetMode() string { return "docker" }
 
+func (m *DockerMonitor) Ping(context.Context, string) (*k8s.PingResult, error) {
+	return nil, ErrPingUnsupported
+}
+
+func (m *DockerMonitor) PingAll(context.Context) ([]*k8s.PingResult, error) {
+	return nil, ErrPingUnsupported
+}
+
 func (m *DockerMonitor) GetStatus(ctx context.Context) (*Status, error) {
 	d, err := m.client.GetContainerStatus(ctx)
 	if err != nil {
@@ -28,6 +38,7 @@ func (m *DockerMonitor) GetStatus(ctx context.Context) (*Status, error) {
 		TotalCount:     d.TotalCount,
 		HealthyCount:   d.RunningCount,
 		UnhealthyCount: d.StoppedCount,
+		UpdatedAt:      time.Now().UTC(),
 	}
 
 	for _, c := range d.Containers {

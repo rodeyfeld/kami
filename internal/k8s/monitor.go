@@ -3,6 +3,9 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"time"
+
+	batchv1 "k8s.io/api/batch/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -106,34 +109,36 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 		return nil, fmt.Errorf("failed to list jobs: %w", err)
 	}
 
-	for _, job := range jobs.Items {
+	for _, job := range latestJobs(jobs.Items) {
 		completions := getInt32(job.Spec.Completions, 1)
 		svcStatus := ServiceStatus{
-			Name:            job.Name,
+			Name:            jobDisplayName(job),
 			Type:            "Job",
 			DesiredReplicas: completions,
+		}
+		age := ""
+		if job.Status.StartTime != nil {
+			age = " · " + humanizeAge(time.Since(job.Status.StartTime.Time))
 		}
 
 		if job.Status.Succeeded > 0 {
 			svcStatus.Status = "Healthy"
-			svcStatus.Message = fmt.Sprintf("Completed %d/%d", job.Status.Succeeded, completions)
+			svcStatus.Message = "Last run succeeded" + age
 			svcStatus.ReadyReplicas = job.Status.Succeeded
 			status.HealthyCount++
 		} else if job.Status.Active > 0 {
 			svcStatus.Status = "Running"
-			svcStatus.Message = fmt.Sprintf("Active: %d", job.Status.Active)
+			svcStatus.Message = "Running" + age
 			svcStatus.ReadyReplicas = job.Status.Active
 			// Running jobs are healthy/working as intended
 			status.HealthyCount++
 		} else if job.Status.Failed > 0 {
 			svcStatus.Status = "Unhealthy"
-			svcStatus.Message = fmt.Sprintf("Failed: %d", job.Status.Failed)
-			svcStatus.ReadyReplicas = 0
+			svcStatus.Message = "Last run failed" + age
 			status.UnhealthyCount++
 		} else {
 			svcStatus.Status = "Unknown"
 			svcStatus.Message = "Pending"
-			svcStatus.ReadyReplicas = 0
 			// Treat pending/unknown as neutral or degraded depending on preference,
 			// but let's not count them as healthy
 			status.DegradedCount++
@@ -152,4 +157,59 @@ func getInt32(ptr *int32, def int32) int32 {
 		return *ptr
 	}
 	return def
+}
+
+// latestJobs keeps only the newest run of each CronJob, so a failure from days ago
+// doesn't stay red after later runs succeed. Jobs without a CronJob owner are kept as-is.
+func latestJobs(jobs []batchv1.Job) []batchv1.Job {
+	latest := make([]batchv1.Job, 0, len(jobs))
+	byCronJob := make(map[string]int)
+
+	for _, job := range jobs {
+		owner := cronJobOwner(job)
+		if owner == "" {
+			latest = append(latest, job)
+			continue
+		}
+		if i, ok := byCronJob[owner]; ok {
+			if job.CreationTimestamp.After(latest[i].CreationTimestamp.Time) {
+				latest[i] = job
+			}
+			continue
+		}
+		byCronJob[owner] = len(latest)
+		latest = append(latest, job)
+	}
+
+	return latest
+}
+
+// jobDisplayName shows CronJob runs under the CronJob's name instead of the generated oracle-29xxxxxx name
+func jobDisplayName(job batchv1.Job) string {
+	if owner := cronJobOwner(job); owner != "" {
+		return owner
+	}
+	return job.Name
+}
+
+func cronJobOwner(job batchv1.Job) string {
+	for _, ref := range job.OwnerReferences {
+		if ref.Kind == "CronJob" {
+			return ref.Name
+		}
+	}
+	return ""
+}
+
+func humanizeAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
 }

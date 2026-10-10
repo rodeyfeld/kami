@@ -15,16 +15,6 @@ import htmx from 'htmx.org';
 // Make htmx globally available
 window.htmx = htmx;
 
-// Update last update timestamp
-document.addEventListener('DOMContentLoaded', () => {
-    setInterval(() => {
-        const elem = document.getElementById('last-update');
-        if (elem) {
-            elem.textContent = 'just now';
-        }
-    }, 10000);
-});
-
 // Log HTMX events for debugging
 if (import.meta.env.DEV) {
     document.body.addEventListener('htmx:beforeRequest', (evt) => {

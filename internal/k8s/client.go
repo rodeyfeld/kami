@@ -9,7 +9,7 @@ import (
 )
 
 type Client struct {
-	Clientset *kubernetes.Clientset
+	Clientset kubernetes.Interface
 	Namespace string
 }
 

@@ -2,72 +2,62 @@ package health
 
 import (
 	"fmt"
-	"strings"
 	"kami/internal/components/layout"
+	"kami/internal/k8s"
 	"kami/internal/monitor"
+	"strings"
 )
 
 templ Dashboard(mode string) {
 	@layout.Base("Health Dashboard") {
 		<div class="space-y-6">
-			<!-- Mode indicator -->
-			<div class="bg-info/10 border border-info/30 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
-				if mode == "kubernetes" {
-					<span class="badge badge-sm badge-info">☸️ Kubernetes</span>
-					<span class="text-info">Monitoring galaxy namespace</span>
-				} else if mode == "docker" {
+			<!-- One poller refreshes every region, so both tabs share a single request -->
+			<div
+				hx-get="/partials/status"
+				hx-trigger="load, every 10s"
+				hx-swap="none"
+				hx-select-oob="#summary,#services-table-container,#infra-table-container,#last-update"
+			></div>
+			if mode == "docker" {
+				<div class="bg-info/10 border border-info/30 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
 					<span class="badge badge-sm badge-info">🐳 Docker</span>
 					<span class="text-info">Local development mode</span>
-				} else {
-					<span class="badge badge-sm badge-warning">⚠️ Standalone</span>
-					<span class="text-warning">No monitoring backend</span>
-				}
+				</div>
+			}
+			<div id="summary">
+				@spinner()
 			</div>
-			<!-- Static Tab Structure -->
 			<div class="space-y-8">
 				<div role="tablist" class="tabs tabs-lifted tabs-lg">
-					<!-- Services Tab -->
 					<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Services" checked="checked"/>
 					<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
-						<!-- Polling for Services Table -->
-						<div
-							hx-get="/api/status"
-							hx-trigger="load, every 10s"
-							hx-select="#services-table-container"
-							hx-swap="outerHTML"
-						>
-							<div class="flex justify-center py-8">
-								<span class="loading loading-spinner loading-md"></span>
-							</div>
+						<div id="services-table-container">
+							@spinner()
 						</div>
 					</div>
-					<!-- Infrastructure Tab -->
 					<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Infrastructure"/>
 					<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
-						<!-- Polling for Infrastructure Table -->
-						<div
-							hx-get="/api/status"
-							hx-trigger="load, every 10s"
-							hx-select="#infra-table-container"
-							hx-swap="outerHTML"
-						>
-							<div class="flex justify-center py-8">
-								<span class="loading loading-spinner loading-md"></span>
-							</div>
+						<div id="infra-table-container">
+							@spinner()
 						</div>
 					</div>
 				</div>
-				<!-- Last Updated -->
 				<div class="text-center text-base-content/50 text-sm">
-					Last updated: <span id="last-update">just now</span> • Auto-refresh every 10s
+					Last updated: <span id="last-update">never</span> • Auto-refresh every 10s
 				</div>
 			</div>
 		</div>
 	}
 }
 
+templ spinner() {
+	<div class="flex justify-center py-8">
+		<span class="loading loading-spinner loading-md"></span>
+	</div>
+}
+
 templ StandaloneMode() {
-	<div class="alert alert-warning shadow-lg">
+	<div id="summary" class="alert alert-warning shadow-lg">
 		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
 		</svg>
@@ -79,30 +69,39 @@ templ StandaloneMode() {
 }
 
 templ ErrorState(message string) {
-	<div class="alert alert-error shadow-lg">
+	<div id="summary" class="alert alert-error shadow-lg">
 		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 		</svg>
 		<div>
-			<h3 class="font-bold">Error</h3>
-			<div class="text-sm">{ message }</div>
+			<h3 class="font-bold">Can't read cluster status</h3>
+			<div class="text-sm font-mono">{ message }</div>
 		</div>
 	</div>
 }
 
 templ StatusCards(status *monitor.Status, mode string) {
-	<!-- We wrap the response in a div that matches hx-select if needed, but we target specific IDs below -->
-	<div class="hidden">
-		<!-- This wrapper ensures we don't return multiple root elements if that matters, though templ handles it -->
+	<div id="summary" class="stats stats-vertical sm:stats-horizontal w-full bg-base-100 shadow">
+		<div class="stat">
+			<div class="stat-title">Healthy</div>
+			<div class="stat-value text-success">{ fmt.Sprint(status.HealthyCount) }<span class="text-base-content/40 text-2xl">/{ fmt.Sprint(status.TotalCount) }</span></div>
+		</div>
+		<div class="stat">
+			<div class="stat-title">Degraded</div>
+			<div class={ "stat-value", templ.KV("text-warning", status.DegradedCount > 0), templ.KV("text-base-content/40", status.DegradedCount == 0) }>{ fmt.Sprint(status.DegradedCount) }</div>
+		</div>
+		<div class="stat">
+			<div class="stat-title">Unhealthy</div>
+			<div class={ "stat-value", templ.KV("text-error", status.UnhealthyCount > 0), templ.KV("text-base-content/40", status.UnhealthyCount == 0) }>{ fmt.Sprint(status.UnhealthyCount) }</div>
+		</div>
 	</div>
-	<!-- Services Table Container -->
-	<div id="services-table-container" hx-get="/api/status" hx-trigger="every 10s" hx-select="#services-table-container" hx-swap="outerHTML">
+	<div id="services-table-container">
 		@ResourceTable(filterResources(status.Resources, "Service"), mode)
 	</div>
-	<!-- Infrastructure Table Container -->
-	<div id="infra-table-container" hx-get="/api/status" hx-trigger="every 10s" hx-select="#infra-table-container" hx-swap="outerHTML">
+	<div id="infra-table-container">
 		@ResourceTable(filterResources(status.Resources, "Infrastructure"), mode)
 	</div>
+	<span id="last-update">{ status.UpdatedAt.Format("15:04:05 UTC") }</span>
 }
 
 templ ResourceTable(resources []monitor.Resource, mode string) {
@@ -118,7 +117,7 @@ templ ResourceTable(resources []monitor.Resource, mode string) {
 						<th>Replicas</th>
 					}
 					<th>Status</th>
-					<th>Info</th>
+					<th>Check</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -181,7 +180,11 @@ templ ResourceRow(resource monitor.Resource, mode string) {
 			@StatusBadge(resource.State, mode)
 		</td>
 		<td>
-			<div class="text-sm text-base-content/70 truncate max-w-xs">{ resource.Status }</div>
+			if resource.Ping != nil {
+				@PingBadge(resource.Ping)
+			} else {
+				<div class="text-sm text-base-content/70 truncate max-w-xs">{ resource.Status }</div>
+			}
 		</td>
 	</tr>
 }
@@ -204,6 +207,30 @@ templ StatusBadge(state string, mode string) {
 			default:
 				<div class="badge badge-ghost badge-sm font-semibold">? { state }</div>
 		}
+	}
+}
+
+// PingBadge shows the result of calling the workload's own health probe
+templ PingBadge(p *k8s.PingResult) {
+	if p.OK {
+		<div class="flex items-center gap-2 text-sm font-mono" title={ p.Path }>
+			<span class="text-success">●</span>
+			switch p.Probe {
+				case "http":
+					<span>{ fmt.Sprint(p.StatusCode) }</span>
+					<span class="text-base-content/50">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
+				case "tcp":
+					<span>tcp</span>
+					<span class="text-base-content/50">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
+				default:
+					<span class="text-base-content/50">pod ready</span>
+			}
+		</div>
+	} else {
+		<div class="flex items-center gap-2 text-sm font-mono text-error truncate max-w-xs" title={ p.Error }>
+			<span>●</span>
+			<span class="truncate">{ p.Error }</span>
+		</div>
 	}
 }
 

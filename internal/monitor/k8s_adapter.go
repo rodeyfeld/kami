@@ -4,29 +4,39 @@ import (
 	"context"
 	"kami/internal/k8s"
 	"strings"
+	"time"
 )
 
 type K8sMonitor struct {
 	client *k8s.Client
+	pinger *k8s.Pinger
 }
 
 func NewK8sMonitor(c *k8s.Client) *K8sMonitor {
-	return &K8sMonitor{client: c}
+	return &K8sMonitor{client: c, pinger: k8s.NewPinger(c)}
 }
 
 func (m *K8sMonitor) GetMode() string { return "kubernetes" }
+
+func (m *K8sMonitor) Ping(ctx context.Context, name string) (*k8s.PingResult, error) {
+	return m.pinger.Ping(ctx, name)
+}
+
+func (m *K8sMonitor) PingAll(ctx context.Context) ([]*k8s.PingResult, error) {
+	return m.pinger.PingAll(ctx)
+}
 
 // getCategory classifies a service into "Public" or "Infrastructure"
 func getCategory(name string) string {
 	// Main user-facing applications
 	publicServices := []string{
-		"luna",       // Frontend
-		"augur",      // API
-		"doppler",    // Blog
-		"kami",       // Monitoring
-		"noctis",     // Prefect workflows
-		"oracle",     // Scheduled jobs
-		"ouroboros",  // Woodpecker CI
+		"luna",      // Frontend
+		"augur",     // API
+		"doppler",   // Blog
+		"kami",      // Monitoring
+		"noctis",    // Prefect workflows
+		"oracle",    // Scheduled jobs
+		"ouroboros", // Woodpecker CI
 	}
 
 	for _, public := range publicServices {
@@ -45,7 +55,7 @@ func getCategory(name string) string {
 
 func isInfrastructureComponent(name string) bool {
 	nameLower := strings.ToLower(name)
-	
+
 	// Explicit infrastructure services
 	infrastructureServices := []string{
 		"atlas",
@@ -78,26 +88,24 @@ func isInfrastructureComponent(name string) bool {
 }
 
 func (m *K8sMonitor) GetStatus(ctx context.Context) (*Status, error) {
-	k8s, err := m.client.GetClusterStatus(ctx)
+	cluster, err := m.client.GetClusterStatus(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	status := &Status{
-		Resources:      make([]Resource, 0),
-		TotalCount:     0,
-		HealthyCount:   0,
-		UnhealthyCount: 0,
+	pings := make(map[string]*k8s.PingResult)
+	if results, err := m.pinger.PingAll(ctx); err == nil {
+		for _, r := range results {
+			pings[r.Name] = r
+		}
 	}
 
-	for _, s := range k8s.Services {
-		category := getCategory(s.Name)
-		
-		// Determine label based on category
-		if category == "Infrastructure" {
-			// Optional: add specific labels if needed
-		}
+	status := &Status{
+		Resources: make([]Resource, 0, len(cluster.Services)),
+		UpdatedAt: time.Now().UTC(),
+	}
 
+	for _, s := range cluster.Services {
 		resource := Resource{
 			Name:    s.Name,
 			Type:    s.Type,
@@ -105,17 +113,22 @@ func (m *K8sMonitor) GetStatus(ctx context.Context) (*Status, error) {
 			Status:  s.Message,
 			Current: s.ReadyReplicas,
 			Desired: s.DesiredReplicas,
-			Labels:  map[string]string{
+			Labels: map[string]string{
 				"namespace": m.client.Namespace,
-				"category": category,
+				"category":  getCategory(s.Name),
 			},
+		}
+		if s.Type != "Job" {
+			resource.Ping = pings[s.Name]
 		}
 		status.Resources = append(status.Resources, resource)
 
-		// Count health status
-		if s.Status == "Healthy" {
+		switch s.Status {
+		case "Healthy", "Running":
 			status.HealthyCount++
-		} else {
+		case "Degraded", "Unknown":
+			status.DegradedCount++
+		default:
 			status.UnhealthyCount++
 		}
 		status.TotalCount++
