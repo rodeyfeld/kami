@@ -72,6 +72,19 @@ func (r *Rollout) InProgress() bool {
 	return r.State == RolloutRolling || r.State == RolloutStuck
 }
 
+// priority keeps rows that need attention above history. Waiting rows only know their pods' age,
+// which can be months old, so sorting them by time would push them past maxRollouts.
+func (r *Rollout) priority() int {
+	switch {
+	case r.InProgress():
+		return 0
+	case r.State == RolloutWaiting:
+		return 1
+	default:
+		return 2
+	}
+}
+
 // Step is one Woodpecker pipeline step, which runs as a pod in the namespace
 type Step struct {
 	Pod        string     `json:"pod"`
@@ -190,8 +203,8 @@ func (w *DeployWatcher) Refresh(ctx context.Context) *Deploys {
 
 	sort.SliceStable(d.Rollouts, func(i, j int) bool {
 		a, b := d.Rollouts[i], d.Rollouts[j]
-		if a.InProgress() != b.InProgress() {
-			return a.InProgress()
+		if a.priority() != b.priority() {
+			return a.priority() < b.priority()
 		}
 		return a.StartedAt.After(b.StartedAt)
 	})

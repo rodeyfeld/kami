@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -238,9 +239,17 @@ func TestOnDeleteStatefulSetWaitsInsteadOfRolling(t *testing.T) {
 		},
 		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
-	w, _ := watcher(sts, p)
+	objects := []runtime.Object{sts, p}
+	// Enough newer history to overflow maxRollouts, which must not push the waiting row out
+	dep := rolloutDeployment("kami", 1)
+	objects = append(objects, dep)
+	for i := 1; i <= maxRollouts+5; i++ {
+		objects = append(objects, replicaSet(dep, strconv.Itoa(i), "", t0.Add(time.Duration(i)*time.Minute)))
+	}
+	w, _ := watcher(objects...)
 
-	r := findRollout(t, w.Refresh(context.Background()), "noctis-postgres", 0)
+	d := w.Refresh(context.Background())
+	r := findRollout(t, d, "noctis-postgres", 0)
 	if r.State != RolloutWaiting || r.InProgress() {
 		t.Fatalf("got %+v", r)
 	}
