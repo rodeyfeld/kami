@@ -27,6 +27,10 @@ func (m *DockerMonitor) PingAll(context.Context) ([]*k8s.PingResult, error) {
 	return nil, ErrPingUnsupported
 }
 
+func (m *DockerMonitor) Deploys(context.Context) (*k8s.Deploys, error) {
+	return nil, ErrDeploysUnsupported
+}
+
 func (m *DockerMonitor) GetStatus(ctx context.Context) (*Status, error) {
 	d, err := m.client.GetContainerStatus(ctx)
 	if err != nil {

@@ -1,6 +1,6 @@
 package layout
 
-templ Base(title string) {
+templ Base(title string, active string) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
 		<head>
@@ -18,10 +18,14 @@ templ Base(title string) {
 						<h1 class="text-4xl font-bold wordmark">神 Kami</h1>
 						<p class="text-base-content/70 mt-2">Pinwheel Labs Health Monitor</p>
 					</div>
-					<a href="https://pinwheel.fan" class="btn btn-ghost btn-sm gap-2 hover:btn-primary transition-all">
-						<i class="fa-solid fa-grip"></i>
-						<span class="hidden sm:inline">All Projects</span>
-					</a>
+					<nav class="flex items-center gap-1">
+						@navLink("/", "fa-heart-pulse", "Health", active == "health")
+						@navLink("/deploys", "fa-rocket", "Deploys", active == "deploys")
+						<a href="https://pinwheel.fan" class="btn btn-ghost btn-sm gap-2 hover:btn-primary transition-all">
+							<i class="fa-solid fa-grip"></i>
+							<span class="hidden sm:inline">All Projects</span>
+						</a>
+					</nav>
 				</header>
 				<main>
 					{ children... }
@@ -30,4 +34,11 @@ templ Base(title string) {
 			<script type="module" src="/static/dist/index.js"></script>
 		</body>
 	</html>
+}
+
+templ navLink(href string, icon string, label string, active bool) {
+	<a href={ templ.SafeURL(href) } class={ "btn btn-sm gap-2", templ.KV("btn-primary", active), templ.KV("btn-ghost", !active) }>
+		<i class={ "fa-solid", icon }></i>
+		<span class="hidden sm:inline">{ label }</span>
+	</a>
 }

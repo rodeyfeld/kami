@@ -1,0 +1,307 @@
+package deploys
+
+import (
+	"fmt"
+	"kami/internal/components/layout"
+	"kami/internal/k8s"
+	"strings"
+	"time"
+)
+
+templ Page() {
+	@layout.Base("Deploys", "deploys") {
+		<div class="space-y-6">
+			<div
+				hx-get="/partials/deploys"
+				hx-trigger="load, every 5s"
+				hx-swap="none"
+				hx-select-oob="#deploys-error,#in-progress,#rollouts,#steps,#deploys-updated"
+			></div>
+			<div id="deploys-error"></div>
+			<div id="in-progress">
+				@spinner()
+			</div>
+			<div class="grid gap-6 xl:grid-cols-5">
+				<section class="bg-base-100 border border-base-300 rounded-box p-6 xl:col-span-3">
+					<h2 class="text-lg font-semibold mb-1">Rollouts</h2>
+					<p class="text-sm text-base-content/50 mb-4">Each restart or spec change makes a new revision</p>
+					<div id="rollouts">
+						@spinner()
+					</div>
+				</section>
+				<section class="bg-base-100 border border-base-300 rounded-box p-6 xl:col-span-2">
+					<h2 class="text-lg font-semibold mb-1">Pipeline steps</h2>
+					<p class="text-sm text-base-content/50 mb-4">Woodpecker steps seen running in the cluster</p>
+					<div id="steps">
+						@spinner()
+					</div>
+				</section>
+			</div>
+			<div class="text-center text-base-content/50 text-sm">
+				Last updated: <span id="deploys-updated">never</span> • Auto-refresh every 5s
+			</div>
+		</div>
+	}
+}
+
+templ spinner() {
+	<div class="flex justify-center py-8">
+		<span class="loading loading-spinner loading-md"></span>
+	</div>
+}
+
+templ Unavailable(message string) {
+	<div id="deploys-error" class="alert alert-warning shadow-lg">
+		<i class="fa-solid fa-triangle-exclamation"></i>
+		<div>
+			<h3 class="font-bold">Deploy tracking unavailable</h3>
+			<div class="text-sm font-mono">{ message }</div>
+		</div>
+	</div>
+	<div id="in-progress"></div>
+	<div id="rollouts"></div>
+	<div id="steps"></div>
+}
+
+templ Content(d *k8s.Deploys) {
+	<div id="deploys-error">
+		if d.Error != "" {
+			<div class="alert alert-error shadow-lg">
+				<i class="fa-solid fa-circle-exclamation"></i>
+				<div class="text-sm font-mono">{ d.Error }</div>
+			</div>
+		}
+	</div>
+	<div id="in-progress">
+		@InProgress(inProgress(d.Rollouts))
+	</div>
+	<div id="rollouts">
+		@RolloutTable(history(d.Rollouts))
+	</div>
+	<div id="steps">
+		@StepTable(d.Steps)
+	</div>
+	<span id="deploys-updated">{ d.UpdatedAt.Format("15:04:05 UTC") }</span>
+}
+
+templ InProgress(rollouts []k8s.Rollout) {
+	if len(rollouts) == 0 {
+		<div class="bg-base-100 border border-base-300 rounded-box px-6 py-4 flex items-center gap-3 text-base-content/70">
+			<i class="fa-solid fa-circle-check text-success"></i>
+			<span>Nothing rolling out</span>
+		</div>
+	} else {
+		<div class="space-y-3">
+			for _, r := range rollouts {
+				<div class={ "bg-base-100 border rounded-box px-6 py-4", templ.KV("border-error", r.State == k8s.RolloutStuck), templ.KV("border-info", r.State == k8s.RolloutRolling) }>
+					<div class="flex flex-wrap items-center gap-3">
+						if r.State == k8s.RolloutStuck {
+							<span class="badge badge-error text-white font-semibold">Stuck</span>
+						} else {
+							<span class="badge badge-info text-white font-semibold gap-1">
+								<span class="loading loading-spinner loading-xs"></span>
+								Rolling
+							</span>
+						}
+						<span class="font-mono font-semibold">{ r.Workload }</span>
+						if r.Revision > 0 {
+							<span class="text-sm text-base-content/50">{ fmt.Sprintf("rev %d", r.Revision) }</span>
+						}
+						<span class="text-sm font-mono">{ fmt.Sprintf("%d/%d ready", r.Ready, r.Desired) }</span>
+						<span class="text-sm text-base-content/50">{ "started " + k8s.HumanizeAge(time.Since(r.StartedAt)) }</span>
+					</div>
+					if r.Reason != "" {
+						<div class="mt-2 text-sm font-mono text-error break-all">{ r.Reason }</div>
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+templ RolloutTable(rollouts []k8s.Rollout) {
+	<div class="overflow-x-auto">
+		<table class="table table-sm w-full">
+			<thead>
+				<tr>
+					<th>Workload</th>
+					<th>Result</th>
+					<th>Image</th>
+					<th>When</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, r := range rollouts {
+					<tr class={ "hover", templ.KV("opacity-60", r.State == k8s.RolloutSuperseded) }>
+						<td>
+							<div class="font-mono text-sm">{ r.Workload }</div>
+							<div class="text-xs text-base-content/50">
+								if r.Revision > 0 {
+									{ fmt.Sprintf("rev %d", r.Revision) }
+								}
+								if r.Trigger != "" {
+									{ " · " + r.Trigger }
+								}
+							</div>
+						</td>
+						<td class="text-sm whitespace-nowrap">
+							@result(r)
+						</td>
+						<td>
+							@image(r)
+						</td>
+						<td class="text-sm text-base-content/70 whitespace-nowrap" title={ r.StartedAt.Format(time.RFC3339) }>
+							{ k8s.HumanizeAge(time.Since(r.StartedAt)) }
+						</td>
+					</tr>
+				}
+				if len(rollouts) == 0 {
+					<tr>
+						<td colspan="4" class="text-center py-8 text-base-content/50">No rollouts found.</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ result(r k8s.Rollout) {
+	switch r.State {
+		case k8s.RolloutDone:
+			if r.Desired == 0 {
+				<span class="badge badge-sm badge-ghost">Scaled to 0</span>
+			} else {
+				<span class="badge badge-sm badge-success text-white">Live</span>
+			}
+		case k8s.RolloutSuperseded:
+			<span class="badge badge-sm badge-ghost">Replaced</span>
+		default:
+			<span class="badge badge-sm badge-info text-white">{ r.State }</span>
+	}
+	if r.ReadyAt != nil && r.ReadyAt.After(r.StartedAt) {
+		<span class="text-base-content/50">{ " ready in " + shortDuration(r.ReadyAt.Sub(r.StartedAt)) }</span>
+	}
+}
+
+// image shows whether a revision runs a new build. Every image is pushed as :latest, so a restart
+// with an unchanged digest means the pipeline restarted the old build.
+templ image(r k8s.Rollout) {
+	<div class="flex items-center gap-2 whitespace-nowrap">
+		if changed := r.ImageChanged(); changed != nil {
+			if *changed {
+				<span class="badge badge-sm badge-success badge-outline">new build</span>
+			} else {
+				<span class="badge badge-sm badge-warning badge-outline" title="Restarted, but the pod pulled the same image as the previous revision">same build</span>
+			}
+		}
+		if r.Digest != "" {
+			<span class="font-mono text-xs text-base-content/50" title={ r.Digest }>{ shortDigest(r.Digest) }</span>
+		} else if r.ImageChanged() == nil {
+			<span class="text-base-content/40">-</span>
+		}
+	</div>
+}
+
+templ StepTable(steps []k8s.Step) {
+	<div class="overflow-x-auto">
+		<table class="table table-sm w-full">
+			<thead>
+				<tr>
+					<th>Repo</th>
+					<th>Step</th>
+					<th>Status</th>
+					<th>When</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, s := range steps {
+					<tr class="hover">
+						<td class="font-mono text-sm">{ s.Repo }</td>
+						<td class="font-mono text-sm">{ s.Name }</td>
+						<td class="text-sm">
+							@stepStatus(s)
+						</td>
+						<td class="text-sm text-base-content/70 whitespace-nowrap" title={ s.StartedAt.Format(time.RFC3339) }>
+							{ k8s.HumanizeAge(time.Since(s.StartedAt)) }
+						</td>
+					</tr>
+				}
+				if len(steps) == 0 {
+					<tr>
+						<td colspan="4" class="text-center py-8 text-base-content/50">
+							No steps since kami started. Woodpecker deletes step pods when they finish, so kami only knows about steps it saw.
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ stepStatus(s k8s.Step) {
+	<div class="flex items-center gap-2">
+		switch s.Phase {
+			case "Succeeded":
+				<i class="fa-solid fa-check text-success"></i>
+			case "Failed":
+				<i class="fa-solid fa-xmark text-error"></i>
+			case "Running":
+				<span class="loading loading-spinner loading-xs text-info"></span>
+			default:
+				<i class="fa-regular fa-clock text-base-content/50"></i>
+		}
+		<span class="text-base-content/70">{ stepDuration(s) }</span>
+	</div>
+	if s.Reason != "" {
+		<div class="text-xs font-mono text-error break-all">{ s.Reason }</div>
+	}
+}
+
+func inProgress(rollouts []k8s.Rollout) []k8s.Rollout {
+	out := make([]k8s.Rollout, 0)
+	for _, r := range rollouts {
+		if r.InProgress() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func history(rollouts []k8s.Rollout) []k8s.Rollout {
+	out := make([]k8s.Rollout, 0, len(rollouts))
+	for _, r := range rollouts {
+		if !r.InProgress() {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func stepDuration(s k8s.Step) string {
+	if s.FinishedAt != nil {
+		return shortDuration(s.FinishedAt.Sub(s.StartedAt))
+	}
+	if s.Phase == "Running" {
+		return shortDuration(time.Since(s.StartedAt))
+	}
+	return strings.ToLower(s.Phase)
+}
+
+func shortDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
+}
+
+func shortDigest(digest string) string {
+	hex := strings.TrimPrefix(digest, "sha256:")
+	if len(hex) > 12 {
+		hex = hex[:12]
+	}
+	return hex
+}

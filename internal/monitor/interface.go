@@ -10,11 +10,15 @@ import (
 // ErrPingUnsupported is returned by monitors that can't reach workloads over the network
 var ErrPingUnsupported = errors.New("health pings require kubernetes mode")
 
+// ErrDeploysUnsupported is returned by monitors that can't see rollouts
+var ErrDeploysUnsupported = errors.New("deploy tracking requires kubernetes mode")
+
 type Monitor interface {
 	GetStatus(ctx context.Context) (*Status, error)
 	GetMode() string
 	Ping(ctx context.Context, name string) (*k8s.PingResult, error)
 	PingAll(ctx context.Context) ([]*k8s.PingResult, error)
+	Deploys(ctx context.Context) (*k8s.Deploys, error)
 }
 
 type Status struct {

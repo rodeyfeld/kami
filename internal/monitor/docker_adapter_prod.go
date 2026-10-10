@@ -22,3 +22,6 @@ func (m *DockerMonitor) Ping(context.Context, string) (*k8s.PingResult, error) {
 func (m *DockerMonitor) PingAll(context.Context) ([]*k8s.PingResult, error) {
 	return nil, ErrPingUnsupported
 }
+func (m *DockerMonitor) Deploys(context.Context) (*k8s.Deploys, error) {
+	return nil, ErrDeploysUnsupported
+}

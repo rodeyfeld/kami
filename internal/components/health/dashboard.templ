@@ -11,7 +11,7 @@ import (
 )
 
 templ Dashboard(mode string) {
-	@layout.Base("Health Dashboard") {
+	@layout.Base("Health Dashboard", "health") {
 		<div class="space-y-6">
 			<!-- One poller refreshes every region with a single request -->
 			<div

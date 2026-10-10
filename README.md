@@ -45,6 +45,21 @@ curl https://kami.pinwheel.fan/api/ping         # all of them
 - `restarts` and `started_at` come from the checked pod, or from a not-ready pod when none are ready, so crash loops show up.
 - Targets come from the cluster, never from the request, so the endpoint can't be pointed at arbitrary hosts.
 
+## Deploys
+
+`/deploys` shows what's rolling out right now, recent rollouts, and the Woodpecker steps kami has seen. The same data is available as JSON:
+
+```bash
+curl https://kami.pinwheel.fan/api/deploys
+```
+
+- **In progress:** Deployments and StatefulSets whose new pods aren't all ready yet. A rollout counts as stuck when a pod hits a problem that waiting won't fix, like `CreateContainerConfigError`, `ImagePullBackOff`, a crash loop, or an unschedulable pod. The reason is shown with it.
+- **Rollouts:** each Deployment revision (one ReplicaSet each), newest first, with what triggered it (`restart` or `spec change`) and how long it took to become ready.
+- **Image:** every image is pushed as `:latest`, so kami compares the image digest each revision's pods pulled. "same build" means a restart picked up the old image, which usually means the build step didn't push.
+- **Pipeline steps:** Woodpecker runs each step as a `wp-*` pod in `galaxy`. kami polls every 5 seconds and remembers steps for 6 hours after Woodpecker deletes their pods.
+
+Digests, ready times and steps are remembered in memory, so they reset when kami restarts. Revisions from before then show without a digest. StatefulSets only appear while rolling, since their history lives in ControllerRevisions.
+
 ## What's in it
 
 Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX polls `/partials/status` every 10 seconds to refresh the summary and table.
@@ -65,7 +80,7 @@ Air watches for changes and automatically rebuilds everything - runs `templ gene
 
 Kami requires read-only access to the cluster via RBAC:
 - ServiceAccount: `kami-monitor`
-- Permissions: `get`, `list`, `watch` on deployments, statefulsets, jobs, pods, and services
+- Permissions: `get`, `list`, `watch` on deployments, replicasets, statefulsets, jobs, pods, events, and services
 - Namespace: `galaxy`
 
 See `../mirage/apps/kami/rbac.yml` for the full RBAC configuration. The ping API only needs the existing `pods` read access, plus network access from the kami pod to other pods' IPs.

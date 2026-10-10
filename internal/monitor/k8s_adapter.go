@@ -8,12 +8,15 @@ import (
 )
 
 type K8sMonitor struct {
-	client *k8s.Client
-	pinger *k8s.Pinger
+	client  *k8s.Client
+	pinger  *k8s.Pinger
+	deploys *k8s.DeployWatcher
 }
 
 func NewK8sMonitor(c *k8s.Client) *K8sMonitor {
-	return &K8sMonitor{client: c, pinger: k8s.NewPinger(c)}
+	deploys := k8s.NewDeployWatcher(c)
+	deploys.Start(context.Background())
+	return &K8sMonitor{client: c, pinger: k8s.NewPinger(c), deploys: deploys}
 }
 
 func (m *K8sMonitor) GetMode() string { return "kubernetes" }
@@ -24,6 +27,10 @@ func (m *K8sMonitor) Ping(ctx context.Context, name string) (*k8s.PingResult, er
 
 func (m *K8sMonitor) PingAll(ctx context.Context) ([]*k8s.PingResult, error) {
 	return m.pinger.PingAll(ctx)
+}
+
+func (m *K8sMonitor) Deploys(ctx context.Context) (*k8s.Deploys, error) {
+	return m.deploys.Snapshot(ctx), nil
 }
 
 // groupOf treats the name up to the first dash as the project, so noctis-postgres groups under noctis
