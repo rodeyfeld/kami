@@ -18,16 +18,33 @@ type Monitor interface {
 }
 
 type Status struct {
-	Resources      []Resource
-	TotalCount     int
-	HealthyCount   int
-	DegradedCount  int
-	UnhealthyCount int
-	UpdatedAt      time.Time
+	Resources []Resource
+	// Scaled-to-zero workloads are left out of every count
+	TotalCount    int
+	UpCount       int
+	DegradedCount int
+	DownCount     int
+	// Running workloads whose only health signal is the pod's Ready flag (exec probe or none)
+	UnverifiedCount int
+	UpdatedAt       time.Time
 }
+
+// Health states shared by every monitor
+const (
+	StateUp           = "Up"
+	StateDegraded     = "Degraded"
+	StateDown         = "Down"
+	StateUnresponsive = "Unresponsive" // pods are Ready but the health check fails
+	StateOff          = "Off"
+	StateSucceeded    = "Succeeded"
+	StateRunning      = "Running"
+	StateFailed       = "Failed"
+	StatePending      = "Pending"
+)
 
 type Resource struct {
 	Name    string
+	Group   string // project the resource belongs to, e.g. "noctis" for noctis-postgres
 	Type    string
 	State   string
 	Status  string
@@ -35,4 +52,21 @@ type Resource struct {
 	Desired int32
 	Labels  map[string]string
 	Ping    *k8s.PingResult // nil when the resource isn't pingable (jobs, docker mode)
+}
+
+func (s *Status) count(state string, ping *k8s.PingResult) {
+	switch state {
+	case StateOff:
+		return
+	case StateUp, StateSucceeded, StateRunning:
+		s.UpCount++
+		if ping != nil && !ping.Verified() {
+			s.UnverifiedCount++
+		}
+	case StateDegraded, StatePending:
+		s.DegradedCount++
+	default:
+		s.DownCount++
+	}
+	s.TotalCount++
 }

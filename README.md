@@ -37,16 +37,22 @@ curl https://kami.pinwheel.fan/api/ping         # all of them
 ```
 
 ```json
-{"name":"augur","ok":true,"probe":"http","path":"/api/readyz","status_code":200,"latency_ms":4,"checked_at":"2026-10-10T18:00:00Z"}
+{"name":"augur","ok":true,"probe":"http","path":"/api/readyz","port":8000,"status_code":200,"latency_ms":4,"checked_at":"2026-10-10T18:00:00Z","restarts":0,"started_at":"2026-10-08T16:00:00Z"}
 ```
 
 - `/api/ping/:name` returns 200 when `ok` and 503 when not, so the status code alone works for uptime checks. Unknown names return 404.
-- `probe` is `http` or `tcp` for network probes. Workloads with exec probes or no probe report `pod-ready`, which only means a pod is Ready.
+- `probe` is `http` or `tcp` when kami called the workload itself. `exec` (e.g. `pg_isready`, which only the kubelet can run) and `none` (no probe declared) mean `ok` only reflects the pod's Ready flag. Add an HTTP or TCP readinessProbe in mirage to make a workload verifiable.
+- `restarts` and `started_at` come from the checked pod, or from a not-ready pod when none are ready, so crash loops show up.
 - Targets come from the cluster, never from the request, so the endpoint can't be pointed at arbitrary hosts.
 
 ## What's in it
 
-Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX polls `/partials/status` every 10 seconds to refresh the summary and both tabs.
+Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX polls `/partials/status` every 10 seconds to refresh the summary and table.
+
+The table groups workloads by project (the name up to the first dash, so `noctis-postgres` sits under `noctis`). Each row shows:
+- **Health:** the rollout status combined with the ping. Ready pods whose health check fails show as "Not responding".
+- **Check:** which probe kami called and what it returned, or why it couldn't call one.
+- **Uptime:** pod age and restart count.
 
 Uses the official Kubernetes Go client (`client-go`) to monitor:
 - **Deployments** - Check replica health for augur, luna, doppler, noctis, ouroboros, etc.

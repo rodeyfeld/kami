@@ -44,8 +44,18 @@ func pod(name string, ready bool, container corev1.Container) *corev1.Pod {
 	}
 }
 
+func crashLooping(p *corev1.Pod) *corev1.Pod {
+	p.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: p.Spec.Containers[0].Name, RestartCount: 14}}
+	return p
+}
+
 func httpProbe(path string, port intstr.IntOrString) *corev1.Probe {
 	return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: path, Port: port}}}
+}
+
+func withHost(p *corev1.Probe, host string) *corev1.Probe {
+	p.HTTPGet.HTTPHeaders = []corev1.HTTPHeader{{Name: "Host", Value: host}}
+	return p
 }
 
 func serverPort(t *testing.T, s *httptest.Server) int {
@@ -60,6 +70,10 @@ func newPinger(objs ...runtime.Object) *Pinger {
 
 func TestPingHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "doppler-service" && r.URL.Path == "/readyz" {
+			w.WriteHeader(http.StatusBadRequest) // like Django rejecting a Host outside ALLOWED_HOSTS
+			return
+		}
 		if r.URL.Path == "/readyz" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -71,7 +85,7 @@ func TestPingHTTP(t *testing.T) {
 
 	p := newPinger(
 		deployment("doppler"),
-		pod("doppler", true, corev1.Container{Name: "doppler", ReadinessProbe: httpProbe("/readyz", intstr.FromInt(port))}),
+		pod("doppler", true, corev1.Container{Name: "doppler", ReadinessProbe: withHost(httpProbe("/readyz", intstr.FromInt(port)), "doppler-service")}),
 		deployment("augur"),
 		pod("augur", true, corev1.Container{
 			Name:           "augur",
@@ -84,7 +98,7 @@ func TestPingHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !r.OK || r.Probe != "http" || r.StatusCode != 200 || r.Path != "/readyz" {
+	if !r.OK || r.Probe != "http" || r.StatusCode != 200 || r.Path != "/readyz" || r.Port != port {
 		t.Errorf("doppler: got %+v", r)
 	}
 
@@ -111,21 +125,25 @@ func TestPingTCPAndExec(t *testing.T) {
 	p := newPinger(
 		deployment("garage"), pod("garage", true, corev1.Container{Name: "garage", LivenessProbe: tcp}),
 		deployment("atlas"), pod("atlas", true, corev1.Container{Name: "atlas", ReadinessProbe: exec}),
-		deployment("luna"), pod("luna", false, corev1.Container{Name: "luna"}),
+		deployment("luna"), pod("luna", true, corev1.Container{Name: "luna"}),
+		deployment("noctis"), crashLooping(pod("noctis", false, corev1.Container{Name: "noctis", ReadinessProbe: exec})),
 	)
 
 	if r, _ := p.Ping(context.Background(), "garage"); !r.OK || r.Probe != "tcp" {
 		t.Errorf("garage: got %+v", r)
 	}
-	if r, _ := p.Ping(context.Background(), "atlas"); !r.OK || r.Probe != "pod-ready" {
+	if r, _ := p.Ping(context.Background(), "atlas"); !r.OK || r.Probe != "exec" || r.Verified() {
 		t.Errorf("atlas: got %+v", r)
 	}
-	if r, _ := p.Ping(context.Background(), "luna"); r.OK || r.Error != "no ready pods" {
+	if r, _ := p.Ping(context.Background(), "luna"); !r.OK || r.Probe != "none" {
 		t.Errorf("luna: got %+v", r)
+	}
+	if r, _ := p.Ping(context.Background(), "noctis"); r.OK || r.Error != "no ready pods" || r.Restarts != 14 || r.Probe != "exec" {
+		t.Errorf("noctis: expected crash loop with restarts, got %+v", r)
 	}
 
 	all, err := p.PingAll(context.Background())
-	if err != nil || len(all) != 3 {
+	if err != nil || len(all) != 4 {
 		t.Fatalf("PingAll: got %d results, err %v", len(all), err)
 	}
 }

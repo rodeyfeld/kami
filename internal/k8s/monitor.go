@@ -53,7 +53,10 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 		}
 
 		// Determine health status
-		if dep.Status.ReadyReplicas == desiredReplicas && dep.Status.AvailableReplicas == desiredReplicas {
+		if desiredReplicas == 0 {
+			svcStatus.Status = "Off"
+			svcStatus.Message = "Scaled to 0"
+		} else if dep.Status.ReadyReplicas == desiredReplicas && dep.Status.AvailableReplicas == desiredReplicas {
 			svcStatus.Status = "Healthy"
 			svcStatus.Message = "All replicas ready"
 			status.HealthyCount++
@@ -86,7 +89,10 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 			AvailableReplicas: sts.Status.ReadyReplicas, // StatefulSets don't have AvailableReplicas in older versions
 		}
 
-		if sts.Status.ReadyReplicas == desiredReplicas {
+		if desiredReplicas == 0 {
+			svcStatus.Status = "Off"
+			svcStatus.Message = "Scaled to 0"
+		} else if sts.Status.ReadyReplicas == desiredReplicas {
 			svcStatus.Status = "Healthy"
 			svcStatus.Message = "All replicas ready"
 			status.HealthyCount++
@@ -118,23 +124,23 @@ func (c *Client) GetClusterStatus(ctx context.Context) (*ClusterStatus, error) {
 		}
 		age := ""
 		if job.Status.StartTime != nil {
-			age = " · " + humanizeAge(time.Since(job.Status.StartTime.Time))
+			age = " " + HumanizeAge(time.Since(job.Status.StartTime.Time))
 		}
 
 		if job.Status.Succeeded > 0 {
 			svcStatus.Status = "Healthy"
-			svcStatus.Message = "Last run succeeded" + age
+			svcStatus.Message = "Ran" + age
 			svcStatus.ReadyReplicas = job.Status.Succeeded
 			status.HealthyCount++
 		} else if job.Status.Active > 0 {
 			svcStatus.Status = "Running"
-			svcStatus.Message = "Running" + age
+			svcStatus.Message = "Started" + age
 			svcStatus.ReadyReplicas = job.Status.Active
 			// Running jobs are healthy/working as intended
 			status.HealthyCount++
 		} else if job.Status.Failed > 0 {
 			svcStatus.Status = "Unhealthy"
-			svcStatus.Message = "Last run failed" + age
+			svcStatus.Message = "Ran" + age
 			status.UnhealthyCount++
 		} else {
 			svcStatus.Status = "Unknown"
@@ -201,7 +207,8 @@ func cronJobOwner(job batchv1.Job) string {
 	return ""
 }
 
-func humanizeAge(d time.Duration) string {
+// HumanizeAge formats a duration as a short relative age like "3h ago"
+func HumanizeAge(d time.Duration) string {
 	switch {
 	case d < time.Minute:
 		return "just now"

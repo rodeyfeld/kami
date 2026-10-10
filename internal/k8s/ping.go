@@ -30,12 +30,22 @@ const (
 type PingResult struct {
 	Name       string    `json:"name"`
 	OK         bool      `json:"ok"`
-	Probe      string    `json:"probe"` // "http", "tcp", or "pod-ready" when there is no network probe to call
+	Probe      string    `json:"probe"` // "http" or "tcp" are called by kami; "exec" and "none" only reflect pod readiness
 	Path       string    `json:"path,omitempty"`
+	Port       int       `json:"port,omitempty"`
 	StatusCode int       `json:"status_code,omitempty"`
 	LatencyMs  int64     `json:"latency_ms"`
 	Error      string    `json:"error,omitempty"`
 	CheckedAt  time.Time `json:"checked_at"`
+
+	// From the pod that was checked, or the first pod when none are ready, so crash loops still show restarts
+	Restarts  int32      `json:"restarts"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+}
+
+// Verified reports whether kami called the workload itself rather than trusting the pod's Ready flag
+func (r *PingResult) Verified() bool {
+	return r.Probe == "http" || r.Probe == "tcp"
 }
 
 // Pinger calls a workload's readiness probe (falling back to its liveness probe) against one of its ready pods.
@@ -73,7 +83,12 @@ func (p *Pinger) Ping(ctx context.Context, name string) (*PingResult, error) {
 		return nil, err
 	}
 
-	r := p.ping(ctx, name, selector)
+	pods, err := p.client.Clientset.CoreV1().Pods(p.client.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	r := p.ping(ctx, name, pods.Items)
 	p.store(r)
 	return r, nil
 }
@@ -83,6 +98,12 @@ func (p *Pinger) PingAll(ctx context.Context) ([]*PingResult, error) {
 	selectors, err := p.allSelectors(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// One list for the whole namespace instead of one per workload, which client-go would otherwise throttle
+	pods, err := p.client.Clientset.CoreV1().Pods(p.client.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 
 	results := make([]*PingResult, len(selectors))
@@ -95,7 +116,7 @@ func (p *Pinger) PingAll(ctx context.Context) ([]*PingResult, error) {
 				results[i] = r
 				return
 			}
-			results[i] = p.ping(ctx, w.name, w.selector)
+			results[i] = p.ping(ctx, w.name, matchingPods(pods.Items, w.selector))
 			p.store(results[i])
 		}()
 	}
@@ -157,48 +178,81 @@ func (p *Pinger) allSelectors(ctx context.Context) ([]workloadSelector, error) {
 	return selectors, nil
 }
 
-func (p *Pinger) ping(ctx context.Context, name string, selector labels.Selector) *PingResult {
-	r := &PingResult{Name: name, Probe: "pod-ready", CheckedAt: time.Now().UTC()}
+func matchingPods(pods []corev1.Pod, selector labels.Selector) []corev1.Pod {
+	matched := make([]corev1.Pod, 0)
+	for _, pod := range pods {
+		if selector.Matches(labels.Set(pod.Labels)) {
+			matched = append(matched, pod)
+		}
+	}
+	return matched
+}
+
+func (p *Pinger) ping(ctx context.Context, name string, pods []corev1.Pod) *PingResult {
+	r := &PingResult{Name: name, Probe: "none", CheckedAt: time.Now().UTC()}
 
 	// Results are cached and shared between callers, so one caller hanging up shouldn't fail the check for everyone
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*pingTimeout)
 	defer cancel()
 
-	pods, err := p.client.Clientset.CoreV1().Pods(p.client.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
-	if err != nil {
-		r.Error = fmt.Sprintf("failed to list pods: %v", err)
+	if len(pods) == 0 {
+		r.Error = "no pods"
 		return r
 	}
 
-	pod := firstReadyPod(pods.Items)
-	if pod == nil {
+	pod := firstReadyPod(pods)
+	ready := pod != nil
+	if !ready {
+		pod = &pods[0]
+	}
+	recordPodStats(r, pod)
+
+	container, probe := findProbe(pod)
+	switch {
+	case probe != nil && probe.Exec != nil:
+		r.Probe = "exec"
+	case probe != nil && probe.HTTPGet != nil:
+		r.Probe = "http"
+		r.Path = probe.HTTPGet.Path
+	case probe != nil && probe.TCPSocket != nil:
+		r.Probe = "tcp"
+	}
+
+	if !ready {
 		r.Error = "no ready pods"
 		return r
 	}
 
-	container, probe := findProbe(pod)
-	switch {
-	case probe != nil && probe.HTTPGet != nil:
+	switch r.Probe {
+	case "http":
 		p.pingHTTP(ctx, r, pod, container, probe.HTTPGet)
-	case probe != nil && probe.TCPSocket != nil:
+	case "tcp":
 		p.pingTCP(ctx, r, pod, container, probe.TCPSocket)
 	default:
-		// exec probes and workloads without probes can't be called over the network, so readiness is all we know
+		// exec probes run inside the container and some workloads declare no probe, so the Ready flag is all we know
 		r.OK = true
 	}
 
 	return r
 }
 
-func (p *Pinger) pingHTTP(ctx context.Context, r *PingResult, pod *corev1.Pod, container *corev1.Container, action *corev1.HTTPGetAction) {
-	r.Probe = "http"
-	r.Path = action.Path
+func recordPodStats(r *PingResult, pod *corev1.Pod) {
+	for _, cs := range pod.Status.ContainerStatuses {
+		r.Restarts += cs.RestartCount
+	}
+	if pod.Status.StartTime != nil {
+		t := pod.Status.StartTime.UTC()
+		r.StartedAt = &t
+	}
+}
 
+func (p *Pinger) pingHTTP(ctx context.Context, r *PingResult, pod *corev1.Pod, container *corev1.Container, action *corev1.HTTPGetAction) {
 	port, err := resolvePort(action.Port, container)
 	if err != nil {
 		r.Error = err.Error()
 		return
 	}
+	r.Port = port
 
 	scheme := "http"
 	if action.Scheme == corev1.URISchemeHTTPS {
@@ -212,6 +266,11 @@ func (p *Pinger) pingHTTP(ctx context.Context, r *PingResult, pod *corev1.Pod, c
 		return
 	}
 	for _, h := range action.HTTPHeaders {
+		// Go ignores a Host entry in Header, so it has to go on the request itself
+		if http.CanonicalHeaderKey(h.Name) == "Host" {
+			req.Host = h.Value
+			continue
+		}
 		req.Header.Set(h.Name, h.Value)
 	}
 
@@ -233,13 +292,12 @@ func (p *Pinger) pingHTTP(ctx context.Context, r *PingResult, pod *corev1.Pod, c
 }
 
 func (p *Pinger) pingTCP(ctx context.Context, r *PingResult, pod *corev1.Pod, container *corev1.Container, action *corev1.TCPSocketAction) {
-	r.Probe = "tcp"
-
 	port, err := resolvePort(action.Port, container)
 	if err != nil {
 		r.Error = err.Error()
 		return
 	}
+	r.Port = port
 
 	dialer := net.Dialer{Timeout: pingTimeout}
 	start := time.Now()

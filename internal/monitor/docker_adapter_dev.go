@@ -34,21 +34,24 @@ func (m *DockerMonitor) GetStatus(ctx context.Context) (*Status, error) {
 	}
 
 	status := &Status{
-		Resources:      make([]Resource, 0, len(d.Containers)),
-		TotalCount:     d.TotalCount,
-		HealthyCount:   d.RunningCount,
-		UnhealthyCount: d.StoppedCount,
-		UpdatedAt:      time.Now().UTC(),
+		Resources: make([]Resource, 0, len(d.Containers)),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	for _, c := range d.Containers {
-		state := "unhealthy"
+		state := StateDown
 		if c.State == "running" {
-			state = "healthy"
+			state = StateUp
+		}
+		group := c.Project
+		if group == "" {
+			group = "standalone"
 		}
 
+		status.count(state, nil)
 		status.Resources = append(status.Resources, Resource{
 			Name:    c.Name,
+			Group:   group,
 			Type:    "container",
 			State:   state,
 			Status:  c.Status,

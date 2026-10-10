@@ -33,6 +33,10 @@ func NewClient() (*Client, error) {
 		}
 	}
 
+	// Each dashboard refresh makes several list calls, and client-go's default of 5 QPS throttles them
+	config.QPS = 20
+	config.Burst = 40
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err

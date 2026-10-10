@@ -5,18 +5,20 @@ import (
 	"kami/internal/components/layout"
 	"kami/internal/k8s"
 	"kami/internal/monitor"
+	"sort"
 	"strings"
+	"time"
 )
 
 templ Dashboard(mode string) {
 	@layout.Base("Health Dashboard") {
 		<div class="space-y-6">
-			<!-- One poller refreshes every region, so both tabs share a single request -->
+			<!-- One poller refreshes every region with a single request -->
 			<div
 				hx-get="/partials/status"
 				hx-trigger="load, every 10s"
 				hx-swap="none"
-				hx-select-oob="#summary,#services-table-container,#infra-table-container,#last-update"
+				hx-select-oob="#summary,#resources-container,#last-update"
 			></div>
 			if mode == "docker" {
 				<div class="bg-info/10 border border-info/30 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
@@ -27,24 +29,13 @@ templ Dashboard(mode string) {
 			<div id="summary">
 				@spinner()
 			</div>
-			<div class="space-y-8">
-				<div role="tablist" class="tabs tabs-lifted tabs-lg">
-					<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Services" checked="checked"/>
-					<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
-						<div id="services-table-container">
-							@spinner()
-						</div>
-					</div>
-					<input type="radio" name="health_tabs" role="tab" class="tab" aria-label="Infrastructure"/>
-					<div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-6">
-						<div id="infra-table-container">
-							@spinner()
-						</div>
-					</div>
+			<div class="bg-base-100 border border-base-300 rounded-box p-6">
+				<div id="resources-container">
+					@spinner()
 				</div>
-				<div class="text-center text-base-content/50 text-sm">
-					Last updated: <span id="last-update">never</span> • Auto-refresh every 10s
-				</div>
+			</div>
+			<div class="text-center text-base-content/50 text-sm">
+				Last updated: <span id="last-update">never</span> • Auto-refresh every 10s
 			</div>
 		</div>
 	}
@@ -83,168 +74,216 @@ templ ErrorState(message string) {
 templ StatusCards(status *monitor.Status, mode string) {
 	<div id="summary" class="stats stats-vertical sm:stats-horizontal w-full bg-base-100 shadow">
 		<div class="stat">
-			<div class="stat-title">Healthy</div>
-			<div class="stat-value text-success">{ fmt.Sprint(status.HealthyCount) }<span class="text-base-content/40 text-2xl">/{ fmt.Sprint(status.TotalCount) }</span></div>
+			<div class="stat-title">Up</div>
+			<div class="stat-value text-success">{ fmt.Sprint(status.UpCount) }<span class="text-base-content/40 text-2xl">/{ fmt.Sprint(status.TotalCount) }</span></div>
 		</div>
 		<div class="stat">
 			<div class="stat-title">Degraded</div>
-			<div class={ "stat-value", templ.KV("text-warning", status.DegradedCount > 0), templ.KV("text-base-content/40", status.DegradedCount == 0) }>{ fmt.Sprint(status.DegradedCount) }</div>
+			<div class={ "stat-value", countColor(status.DegradedCount, "text-warning") }>{ fmt.Sprint(status.DegradedCount) }</div>
 		</div>
 		<div class="stat">
-			<div class="stat-title">Unhealthy</div>
-			<div class={ "stat-value", templ.KV("text-error", status.UnhealthyCount > 0), templ.KV("text-base-content/40", status.UnhealthyCount == 0) }>{ fmt.Sprint(status.UnhealthyCount) }</div>
+			<div class="stat-title">Down</div>
+			<div class={ "stat-value", countColor(status.DownCount, "text-error") }>{ fmt.Sprint(status.DownCount) }</div>
 		</div>
+		if mode == "kubernetes" {
+			<div class="stat">
+				<div class="stat-title">Unverified</div>
+				<div class={ "stat-value", countColor(status.UnverifiedCount, "text-warning") }>{ fmt.Sprint(status.UnverifiedCount) }</div>
+				<div class="stat-desc">Up, but kami can't call their health check</div>
+			</div>
+		}
 	</div>
-	<div id="services-table-container">
-		@ResourceTable(filterResources(status.Resources, "Service"), mode)
-	</div>
-	<div id="infra-table-container">
-		@ResourceTable(filterResources(status.Resources, "Infrastructure"), mode)
+	<div id="resources-container">
+		@ResourceTable(groupResources(status.Resources), mode)
 	</div>
 	<span id="last-update">{ status.UpdatedAt.Format("15:04:05 UTC") }</span>
 }
 
-templ ResourceTable(resources []monitor.Resource, mode string) {
+templ ResourceTable(groups []resourceGroup, mode string) {
 	<div class="overflow-x-auto">
-		<table class="table table-zebra w-full">
+		<table class="table w-full">
 			<thead>
 				<tr>
-					<th>Name</th>
-					<th>Type</th>
+					<th>Component</th>
+					<th>Health</th>
 					if mode == "docker" {
-						<th>Project</th>
+						<th>Status</th>
 					} else {
-						<th>Replicas</th>
+						<th>Check</th>
+						<th>Uptime</th>
 					}
-					<th>Status</th>
-					<th>Check</th>
 				</tr>
 			</thead>
-			<tbody>
-				for _, resource := range resources {
-					@ResourceRow(resource, mode)
-				}
-				if len(resources) == 0 {
+			for _, group := range groups {
+				<tbody>
+					// Projects with one component get a single row instead of a header repeating its name
+					if len(group.Resources) > 1 {
+						<tr>
+							<th colspan="4" class="font-semibold">
+								<span class="flex items-center gap-2">
+									<i class={ "w-4 text-center", getServiceIconClass(group.Name) }></i>
+									<span>{ group.Name }</span>
+								</span>
+							</th>
+						</tr>
+					}
+					for _, resource := range group.Resources {
+						@ResourceRow(resource, mode, len(group.Resources) > 1)
+					}
+				</tbody>
+			}
+			if len(groups) == 0 {
+				<tbody>
 					<tr>
-						<td colspan="5" class="text-center py-8 text-base-content/50">
-							No resources found in this category.
-						</td>
+						<td colspan="4" class="text-center py-8 text-base-content/50">No resources found.</td>
 					</tr>
-				}
-			</tbody>
+				</tbody>
+			}
 		</table>
 	</div>
 }
 
-templ ResourceRow(resource monitor.Resource, mode string) {
+templ ResourceRow(resource monitor.Resource, mode string, nested bool) {
 	<tr class="hover">
-		<td>
-			<div class="font-semibold flex items-center gap-2">
-				if mode != "docker" {
-					<span class={ getServiceIconClass(resource.Name) }></span>
+		<td class={ templ.KV("pl-12", nested) }>
+			<div class="flex items-center gap-2">
+				if !nested {
+					<i class={ "w-4 text-center", getServiceIconClass(resource.Group) }></i>
 				}
-				<span>{ resource.Name }</span>
+				<span class="font-mono text-sm">{ resource.Name }</span>
+				if resource.Type == "Job" {
+					<span class="badge badge-xs badge-ghost">job</span>
+				}
 			</div>
 			if mode == "docker" && resource.Labels["id"] != "" {
-				<div class="text-xs text-base-content/50 font-mono">{ resource.Labels["id"][:12] }</div>
+				<div class="text-xs text-base-content/50 font-mono">{ resource.Labels["id"] }</div>
 			}
 		</td>
 		<td>
-			<span class="badge badge-sm badge-ghost">{ resource.Type }</span>
+			@HealthBadge(resource, mode)
 		</td>
-		if mode == "docker" {
-			<td>
-				if resource.Labels["project"] != "" {
-					<span class="badge badge-sm badge-primary text-white font-semibold">{ resource.Labels["project"] }</span>
+		<td>
+			@CheckCell(resource)
+		</td>
+		if mode != "docker" {
+			<td class="text-sm font-mono">
+				if resource.Ping != nil && resource.Ping.StartedAt != nil {
+					<span>{ uptime(*resource.Ping.StartedAt) }</span>
 				} else {
-					<span class="text-base-content/50">-</span>
+					<span class="text-base-content/40">-</span>
 				}
-			</td>
-		} else {
-			<td>
-				if resource.Desired > 0 && resource.Type != "Job" {
-					<div class="flex items-center gap-2">
-						<progress
-							class={ "progress progress-sm w-20", getProgressColor(resource.State) }
-							value={ fmt.Sprintf("%d", resource.Current) }
-							max={ fmt.Sprintf("%d", resource.Desired) }
-						></progress>
-						<span class="text-sm font-mono">{ fmt.Sprintf("%d/%d", resource.Current, resource.Desired) }</span>
-					</div>
-				} else {
-					<span class="text-base-content/50">-</span>
+				if resource.Ping != nil && resource.Ping.Restarts > 0 {
+					<span class="text-warning" title="Container restarts in this pod">{ fmt.Sprintf(" · %d restarts", resource.Ping.Restarts) }</span>
 				}
 			</td>
 		}
-		<td>
-			@StatusBadge(resource.State, mode)
-		</td>
-		<td>
-			if resource.Ping != nil {
-				@PingBadge(resource.Ping)
-			} else {
-				<div class="text-sm text-base-content/70 truncate max-w-xs">{ resource.Status }</div>
-			}
-		</td>
 	</tr>
 }
 
-templ StatusBadge(state string, mode string) {
-	if mode == "docker" && state == "healthy" {
-		<div class="badge badge-success badge-sm text-white font-semibold">✓ Running</div>
-	} else if mode == "docker" && state == "unhealthy" {
-		<div class="badge badge-error badge-sm text-white font-semibold">✗ Stopped</div>
-	} else {
-		switch state {
-			case "Healthy", "healthy":
-				<div class="badge badge-success badge-sm text-white font-semibold">✓ Healthy</div>
-			case "Degraded":
-				<div class="badge badge-warning badge-sm text-black font-semibold">⚠ Degraded</div>
-			case "Unhealthy", "unhealthy":
-				<div class="badge badge-error badge-sm text-white font-semibold">✗ Unhealthy</div>
-			case "Running":
-				<div class="badge badge-info badge-sm text-white font-semibold">● Running</div>
-			default:
-				<div class="badge badge-ghost badge-sm font-semibold">? { state }</div>
-		}
-	}
+templ HealthBadge(resource monitor.Resource, mode string) {
+	{{ label, class := health(resource, mode) }}
+	<div class={ "badge badge-sm font-semibold", class }>{ label }</div>
 }
 
-// PingBadge shows the result of calling the workload's own health probe
-templ PingBadge(p *k8s.PingResult) {
-	if p.OK {
-		<div class="flex items-center gap-2 text-sm font-mono" title={ p.Path }>
-			<span class="text-success">●</span>
+// CheckCell says how health was determined: the probe kami called and its result, or why there wasn't one
+templ CheckCell(resource monitor.Resource) {
+	if p := resource.Ping; p == nil {
+		<span class="text-sm text-base-content/60">{ resource.Status }</span>
+	} else {
+		<div class="flex items-center gap-2 text-sm font-mono">
 			switch p.Probe {
 				case "http":
-					<span>{ fmt.Sprint(p.StatusCode) }</span>
-					<span class="text-base-content/50">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
+					<span class="text-base-content/70" title={ p.Path }>{ "GET " + truncate(p.Path, 32) }</span>
 				case "tcp":
-					<span>tcp</span>
-					<span class="text-base-content/50">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
+					<span class="text-base-content/70">{ fmt.Sprintf("TCP :%d", p.Port) }</span>
+				case "exec":
+					<span class="text-warning/80" title="exec probes run inside the container, so kami can't call them. This only reflects the pod's Ready flag.">exec probe · not callable</span>
 				default:
-					<span class="text-base-content/50">pod ready</span>
+					<span class="text-warning" title="Add a readinessProbe to this workload in mirage so kami can check it.">no probe declared</span>
 			}
-		</div>
-	} else {
-		<div class="flex items-center gap-2 text-sm font-mono text-error truncate max-w-xs" title={ p.Error }>
-			<span>●</span>
-			<span class="truncate">{ p.Error }</span>
+			if p.Verified() {
+				if p.OK {
+					if p.Probe == "tcp" {
+						<span class="text-success">open</span>
+					} else {
+						<span class="text-success">{ fmt.Sprint(p.StatusCode) }</span>
+					}
+					<span class="text-base-content/50">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
+				} else if resource.State == monitor.StateUnresponsive {
+					<span class="text-error truncate max-w-xs" title={ p.Error }>{ p.Error }</span>
+				} else {
+					<span class="text-base-content/50">not called</span>
+				}
+			}
 		</div>
 	}
 }
 
-func getProgressColor(status string) string {
-	switch status {
-	case "Healthy", "healthy":
-		return "progress-success"
-	case "Degraded":
-		return "progress-warning"
-	case "Unhealthy", "unhealthy":
-		return "progress-error"
-	default:
-		return "progress-ghost"
+type resourceGroup struct {
+	Name      string
+	Resources []monitor.Resource
+}
+
+func groupResources(resources []monitor.Resource) []resourceGroup {
+	byName := make(map[string][]monitor.Resource)
+	for _, r := range resources {
+		byName[r.Group] = append(byName[r.Group], r)
 	}
+
+	groups := make([]resourceGroup, 0, len(byName))
+	for name, rs := range byName {
+		sort.Slice(rs, func(i, j int) bool { return rs[i].Name < rs[j].Name })
+		groups = append(groups, resourceGroup{Name: name, Resources: rs})
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+	return groups
+}
+
+func health(r monitor.Resource, mode string) (string, string) {
+	switch r.State {
+	case monitor.StateUp:
+		if mode == "docker" {
+			return "Running", "badge-success text-white"
+		}
+		return "Up", "badge-success text-white"
+	case monitor.StateDown:
+		if mode == "docker" {
+			return "Stopped", "badge-error text-white"
+		}
+		return "Down", "badge-error text-white"
+	case monitor.StateUnresponsive:
+		return "Not responding", "badge-error text-white"
+	case monitor.StateDegraded:
+		return fmt.Sprintf("Degraded %d/%d", r.Current, r.Desired), "badge-warning text-black"
+	case monitor.StateOff:
+		return "Off", "badge-ghost"
+	case monitor.StateSucceeded:
+		return "Succeeded", "badge-success badge-outline"
+	case monitor.StateRunning:
+		return "Running", "badge-info text-white"
+	case monitor.StateFailed:
+		return "Failed", "badge-error text-white"
+	default:
+		return r.State, "badge-ghost"
+	}
+}
+
+func countColor(n int, color string) string {
+	if n > 0 {
+		return color
+	}
+	return "text-base-content/40"
+}
+
+func uptime(started time.Time) string {
+	return strings.TrimSuffix(k8s.HumanizeAge(time.Since(started)), " ago")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func getServiceIconClass(name string) string {
@@ -279,17 +318,4 @@ func getServiceIconClass(name string) string {
 	default:
 		return "fa-solid fa-circle text-base-content/50"
 	}
-}
-
-func filterResources(resources []monitor.Resource, category string) []monitor.Resource {
-	filtered := make([]monitor.Resource, 0)
-	for _, r := range resources {
-		cat := r.Labels["category"]
-		if category == "Service" && (cat == "Service" || cat == "") {
-			filtered = append(filtered, r)
-		} else if category == "Infrastructure" && (cat == "Infrastructure" || cat == "Other") {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
 }

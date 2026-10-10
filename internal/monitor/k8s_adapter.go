@@ -26,65 +26,38 @@ func (m *K8sMonitor) PingAll(ctx context.Context) ([]*k8s.PingResult, error) {
 	return m.pinger.PingAll(ctx)
 }
 
-// getCategory classifies a service into "Public" or "Infrastructure"
-func getCategory(name string) string {
-	// Main user-facing applications
-	publicServices := []string{
-		"luna",      // Frontend
-		"augur",     // API
-		"doppler",   // Blog
-		"kami",      // Monitoring
-		"noctis",    // Prefect workflows
-		"oracle",    // Scheduled jobs
-		"ouroboros", // Woodpecker CI
-	}
-
-	for _, public := range publicServices {
-		if strings.HasPrefix(name, public) && !isInfrastructureComponent(name) {
-			return "Service"
-		}
-	}
-
-	// Infrastructure components (DBs, Queues, Storage)
-	if isInfrastructureComponent(name) {
-		return "Infrastructure"
-	}
-
-	return "Other"
+// groupOf treats the name up to the first dash as the project, so noctis-postgres groups under noctis
+func groupOf(name string) string {
+	group, _, _ := strings.Cut(name, "-")
+	return group
 }
 
-func isInfrastructureComponent(name string) bool {
-	nameLower := strings.ToLower(name)
-
-	// Explicit infrastructure services
-	infrastructureServices := []string{
-		"atlas",
-		"garage",
-		"cuneiform",
-		"postgres",
-		"redis",
-		"rabbitmq",
-		"prefect-server",
-	}
-
-	for _, infra := range infrastructureServices {
-		if strings.Contains(nameLower, infra) {
-			return true
+// state combines the k8s rollout status with the ping, so a workload whose pods are Ready
+// but whose health check fails isn't reported as up
+func state(s k8s.ServiceStatus, ping *k8s.PingResult) string {
+	switch s.Status {
+	case "Healthy":
+		if s.Type == "Job" {
+			return StateSucceeded
 		}
-	}
-
-	// Helper components often associated with main apps
-	helperKeywords := []string{
-		"worker", "scheduler", "flower", "beat", "db", "cache", "queue",
-	}
-
-	for _, keyword := range helperKeywords {
-		if strings.Contains(nameLower, keyword) {
-			return true
+		if ping != nil && !ping.OK {
+			return StateUnresponsive
 		}
+		return StateUp
+	case "Degraded":
+		return StateDegraded
+	case "Running":
+		return StateRunning
+	case "Off":
+		return StateOff
+	case "Unknown":
+		return StatePending
+	default:
+		if s.Type == "Job" {
+			return StateFailed
+		}
+		return StateDown
 	}
-
-	return false
 }
 
 func (m *K8sMonitor) GetStatus(ctx context.Context) (*Status, error) {
@@ -106,32 +79,24 @@ func (m *K8sMonitor) GetStatus(ctx context.Context) (*Status, error) {
 	}
 
 	for _, s := range cluster.Services {
+		var ping *k8s.PingResult
+		if s.Type != "Job" && s.Status != "Off" {
+			ping = pings[s.Name]
+		}
+
 		resource := Resource{
 			Name:    s.Name,
+			Group:   groupOf(s.Name),
 			Type:    s.Type,
-			State:   s.Status,
+			State:   state(s, ping),
 			Status:  s.Message,
 			Current: s.ReadyReplicas,
 			Desired: s.DesiredReplicas,
-			Labels: map[string]string{
-				"namespace": m.client.Namespace,
-				"category":  getCategory(s.Name),
-			},
-		}
-		if s.Type != "Job" {
-			resource.Ping = pings[s.Name]
+			Labels:  map[string]string{"namespace": m.client.Namespace},
+			Ping:    ping,
 		}
 		status.Resources = append(status.Resources, resource)
-
-		switch s.Status {
-		case "Healthy", "Running":
-			status.HealthyCount++
-		case "Degraded", "Unknown":
-			status.DegradedCount++
-		default:
-			status.UnhealthyCount++
-		}
-		status.TotalCount++
+		status.count(resource.State, ping)
 	}
 
 	return status, nil
