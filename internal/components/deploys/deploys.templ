@@ -188,8 +188,6 @@ templ result(r k8s.Rollout) {
 			}
 		case k8s.RolloutSuperseded:
 			<span class="state text-base-content/40"><span class="dot-hollow"></span>replaced</span>
-		case k8s.RolloutWaiting:
-			<span class="state text-warning" title={ r.Reason }><span class="dot-hollow"></span>waits for pod delete</span>
 		default:
 			<span class="state text-info"><span class="dot"></span>{ r.State }</span>
 	}

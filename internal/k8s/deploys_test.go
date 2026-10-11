@@ -224,7 +224,7 @@ func TestMissingReplicaSetPermissionIsExplained(t *testing.T) {
 	}
 }
 
-func TestOnDeleteStatefulSetWaitsInsteadOfRolling(t *testing.T) {
+func TestOnDeleteStatefulSetOnlyShowsWhenStuck(t *testing.T) {
 	replicas := int32(1)
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "noctis-postgres", Namespace: ns, UID: "sts-uid", CreationTimestamp: metav1.NewTime(t0)},
@@ -235,25 +235,42 @@ func TestOnDeleteStatefulSetWaitsInsteadOfRolling(t *testing.T) {
 		Status: appsv1.StatefulSetStatus{CurrentRevision: "noctis-postgres-1", UpdateRevision: "noctis-postgres-2"},
 	}
 	controller := true
-	p := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "noctis-postgres-0", Namespace: ns,
-			OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", UID: sts.UID, Controller: &controller}},
-		},
-		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+	pod := func(ready bool) *corev1.Pod {
+		p := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "noctis-postgres-0", Namespace: ns,
+				OwnerReferences: []metav1.OwnerReference{{Kind: "StatefulSet", UID: sts.UID, Controller: &controller}},
+			},
+		}
+		if ready {
+			p.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+		} else {
+			p.Status.ContainerStatuses = []corev1.ContainerStatus{{
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+			}}
+		}
+		return p
 	}
-	objects := []runtime.Object{sts, p}
-	// Enough newer history to overflow maxRollouts, which must not push the waiting row out
+
+	// A pending revision with ready pods will never roll on its own, so it gets no row
+	w, _ := watcher(sts, pod(true))
+	for _, r := range w.Refresh(context.Background()).Rollouts {
+		if r.Workload == "noctis-postgres" {
+			t.Fatalf("healthy OnDelete StatefulSet got a row: %+v", r)
+		}
+	}
+
+	// Enough newer history to overflow maxRollouts, which must not push the stuck row out
+	objects := []runtime.Object{sts, pod(false)}
 	dep := rolloutDeployment("kami", 1)
 	objects = append(objects, dep)
 	for i := 1; i <= maxRollouts+5; i++ {
 		objects = append(objects, replicaSet(dep, strconv.Itoa(i), "", t0.Add(time.Duration(i)*time.Minute)))
 	}
-	w, _ := watcher(objects...)
+	w, _ = watcher(objects...)
 
-	d := w.Refresh(context.Background())
-	r := findRollout(t, d, "noctis-postgres", 0)
-	if r.State != RolloutWaiting || r.InProgress() {
+	r := findRollout(t, w.Refresh(context.Background()), "noctis-postgres", 0)
+	if r.State != RolloutStuck || r.Reason != "CrashLoopBackOff" {
 		t.Fatalf("got %+v", r)
 	}
 }

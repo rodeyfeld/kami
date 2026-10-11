@@ -39,7 +39,6 @@ const (
 	RolloutStuck      = "stuck"
 	RolloutDone       = "done"
 	RolloutSuperseded = "superseded" // an older revision, kept for history
-	RolloutWaiting    = "waiting"    // an OnDelete StatefulSet whose pods keep the old revision until someone deletes them
 )
 
 // Rollout is one revision of a workload: each `rollout restart` or spec change makes a new one
@@ -79,17 +78,13 @@ func (r *Rollout) InProgress() bool {
 	return r.State == RolloutRolling || r.State == RolloutStuck
 }
 
-// priority keeps rows that need attention above history. Waiting rows only know their pods' age,
-// which can be months old, so sorting them by time would push them past maxRollouts.
+// priority keeps rows that need attention above history. StatefulSet rows only know their pods'
+// age, which can be months old, so sorting them by time would push them past maxRollouts.
 func (r *Rollout) priority() int {
-	switch {
-	case r.InProgress():
+	if r.InProgress() {
 		return 0
-	case r.State == RolloutWaiting:
-		return 1
-	default:
-		return 2
 	}
+	return 1
 }
 
 // Step is one Woodpecker pipeline step, which runs as a pod in the namespace
@@ -350,7 +345,10 @@ func statefulSetRollouts(statefulSets []appsv1.StatefulSet, pods []corev1.Pod) [
 		owned := podsOwnedBy(pods, sts.UID)
 		ready := countReady(owned)
 		updating := sts.Status.UpdateRevision != "" && sts.Status.CurrentRevision != sts.Status.UpdateRevision
-		if desired == 0 || (!updating && ready >= desired) {
+		// An OnDelete StatefulSet never rolls on its own, and mirage's restart step bumps its
+		// revision on every push, so a pending revision with ready pods isn't worth a row
+		onDelete := sts.Spec.UpdateStrategy.Type == appsv1.OnDeleteStatefulSetStrategyType
+		if desired == 0 || ((!updating || onDelete) && ready >= desired) {
 			continue
 		}
 
@@ -364,10 +362,6 @@ func statefulSetRollouts(statefulSets []appsv1.StatefulSet, pods []corev1.Pod) [
 		}
 		if reason := stuckReason(owned); reason != "" {
 			r.State, r.Reason = RolloutStuck, reason
-		} else if sts.Spec.UpdateStrategy.Type == appsv1.OnDeleteStatefulSetStrategyType && ready >= desired {
-			// Nothing will happen on its own, so this isn't in progress, e.g. mirage's restart-everything step
-			r.State = RolloutWaiting
-			r.Reason = "OnDelete update strategy: pods keep the old revision until they're deleted"
 		}
 		rollouts = append(rollouts, r)
 	}
