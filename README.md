@@ -63,16 +63,23 @@ curl https://kami.pinwheel.fan/api/deploys
 
 The repos are private on schematics (Forgejo), so kami reads Woodpecker with `KAMI_WOODPECKER_TOKEN`, the token of a Forgejo user `kami` that only has read access to the CI repos. Woodpecker copies the forge's permissions, so that token can see pipelines but not trigger or change anything. Without a token kami reads anonymously, which only shows public repos; anything it can't see shows its rollouts as manual. Set `KAMI_WOODPECKER_URL=off` to disable this, or point it elsewhere; `KAMI_WOODPECKER_PUBLIC_URL` sets the base for links. If Woodpecker is unreachable, the page falls back to the step pods it saw in the cluster.
 
-Digests, ready times and steps are remembered in memory, so they reset when kami restarts. Revisions from before then show without a digest. StatefulSets only appear while rolling, since their history lives in ControllerRevisions. StatefulSets with the `OnDelete` update strategy (noctis-postgres) show as "Waits for pod delete" when their spec changes, since their pods only update when deleted.
+Digests, ready times and steps are remembered in memory, so they reset when kami restarts. Revisions from before then show without a digest. StatefulSets only appear while rolling, since their history lives in ControllerRevisions. StatefulSets with the `OnDelete` update strategy (noctis-postgres) only show when their pods are stuck: their pods never roll on their own, and mirage bumps their revision on every push.
 
 ## What's in it
 
 Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX polls `/partials/status` every 10 seconds to refresh the summary and table.
 
-The table groups workloads by project (the name up to the first dash, so `noctis-postgres` sits under `noctis`). Each row shows:
+The table groups workloads by project (the name up to the first dash, so `noctis-postgres` sits under `noctis`). Each project shows 90 daily uptime bars, its 90-day uptime and its current health, and opens to its components:
 - **Health:** the rollout status combined with the ping. Ready pods whose health check fails show as "Not responding".
+- **Uptime:** the component's 90-day uptime.
 - **Check:** which probe kami called and what it returned, or why it couldn't call one.
-- **Uptime:** pod age and restart count.
+- **Age:** pod age and restart count.
+
+### Uptime
+
+Every minute kami samples every workload and adds the minute to that day's bucket as up, degraded or down. A project counts as its worst component. Uptime is the share of observed time that wasn't down: degraded counts as up, since a rolling deploy reads as degraded while it still serves. Time when kami itself wasn't running isn't counted either way. The big number is the average of the projects.
+
+Buckets live in SQLite at `KAMI_UPTIME_DB` (default `/data/kami.db`, a PVC in the cluster) and are kept for 120 days. If the file can't be opened, the page works without uptime.
 
 Uses the official Kubernetes Go client (`client-go`) to monitor:
 - **Deployments** - Check replica health for augur, luna, doppler, noctis, ouroboros, etc.

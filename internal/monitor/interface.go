@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"kami/internal/k8s"
+	"kami/internal/uptime"
 	"time"
 )
 
@@ -73,4 +74,39 @@ func (s *Status) count(state string, ping *k8s.PingResult) {
 		s.DownCount++
 	}
 	s.TotalCount++
+}
+
+// Level maps a health state onto uptime; scaled-to-zero resources aren't counted at all
+func Level(state string) (uptime.Level, bool) {
+	switch state {
+	case StateOff:
+		return 0, false
+	case StateUp, StateSucceeded, StateRunning:
+		return uptime.Up, true
+	case StateDegraded, StatePending:
+		return uptime.Degraded, true
+	default:
+		return uptime.Down, true
+	}
+}
+
+// Samples turns the status into one uptime sample per component and one per project, where a
+// project is as healthy as its worst component
+func (s *Status) Samples() []uptime.Sample {
+	samples := make([]uptime.Sample, 0, len(s.Resources))
+	groups := make(map[string]uptime.Level)
+	for _, r := range s.Resources {
+		level, counted := Level(r.State)
+		if !counted {
+			continue
+		}
+		samples = append(samples, uptime.Sample{Key: r.Name, Level: level})
+		if worst, seen := groups[r.Group]; !seen || level > worst {
+			groups[r.Group] = level
+		}
+	}
+	for group, level := range groups {
+		samples = append(samples, uptime.Sample{Key: uptime.GroupKey(group), Level: level})
+	}
+	return samples
 }

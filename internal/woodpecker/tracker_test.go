@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -117,7 +118,7 @@ func pipeline(number int64, status string, created time.Duration, steps ...Step)
 }
 
 func step(id int64, name, state string, started, finished time.Duration) Step {
-	return Step{ID: id, Name: name, State: state, Type: "commands", Started: unix(started), Finished: unix(finished)}
+	return Step{ID: id, PID: id + 1, Name: name, State: state, Type: "commands", Started: unix(started), Finished: unix(finished)}
 }
 
 func setup(t *testing.T) (*fakeServer, *Tracker) {
@@ -174,6 +175,11 @@ func TestSyncSkipsPrivateReposAndLoadsSteps(t *testing.T) {
 	}
 	if d := kami.Steps[0].Duration; d == nil || *d != 150*time.Second {
 		t.Fatalf("build duration: %v", d)
+	}
+	for _, s := range kami.Steps {
+		if !strings.HasPrefix(s.URL, kami.URL+"/") || s.URL == kami.URL+"/0" {
+			t.Fatalf("step %s url: %q", s.Name, s.URL)
+		}
 	}
 }
 

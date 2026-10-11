@@ -50,6 +50,7 @@ type Workflow struct {
 
 type Step struct {
 	ID       int64  `json:"id"`
+	PID      int64  `json:"pid"` // the step's number in the pipeline, as its page URL uses it
 	Name     string `json:"name"`
 	State    string `json:"state"` // pending, running, success, failure, killed, skipped, ...
 	Type     string `json:"type"`

@@ -2,6 +2,8 @@ package server
 
 import (
 	"kami/internal/monitor"
+	"kami/internal/uptime"
+	"os"
 
 	"github.com/labstack/echo/v4"
 )
@@ -9,6 +11,7 @@ import (
 type KamiServer struct {
 	Echo    *echo.Echo
 	Monitor monitor.Monitor
+	Uptime  *uptime.Store // nil when kami has nowhere to keep history
 }
 
 func NewKamiServer() *KamiServer {
@@ -16,5 +19,9 @@ func NewKamiServer() *KamiServer {
 }
 
 func (s *KamiServer) Start() error {
-	return s.Echo.Start(":8080")
+	port := os.Getenv("KAMI_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	return s.Echo.Start(":" + port)
 }

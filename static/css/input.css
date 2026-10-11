@@ -111,6 +111,28 @@
 	.notice {
 		@apply border-l pl-4 py-1 text-sm;
 	}
+
+	/* Uptime: fixed columns so every project's bars line up with the axis below them */
+	.uptime-name {
+		@apply w-20 sm:w-28 shrink-0;
+	}
+
+	.uptime-pct {
+		@apply inline-block w-14 shrink-0;
+	}
+
+	.uptime-state {
+		@apply flex justify-end w-4 sm:w-28 shrink-0;
+	}
+
+	/* One faint stroke per day; the hovered day comes forward */
+	.uptime-bar {
+		@apply flex-1 min-w-[2px] rounded-[1px] transition-opacity duration-300;
+	}
+
+	.uptime-bar:hover {
+		@apply opacity-60;
+	}
 }
 
 /* A living thing breathes: healthy and in-progress dots slowly fade in and out */
@@ -122,11 +144,6 @@
 .breathe {
 	animation: breathe 4s ease-in-out infinite;
 }
-
-/* Ring dots breathe out of step with each other */
-.ring-dot:nth-of-type(3n) { animation-delay: -1.3s; }
-.ring-dot:nth-of-type(3n+1) { animation-delay: -2.6s; }
-.ring-dot:nth-of-type(5n) { animation-duration: 5.5s; }
 
 .breathe-fast {
 	animation: breathe 1.4s ease-in-out infinite;

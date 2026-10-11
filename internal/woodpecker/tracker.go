@@ -54,6 +54,7 @@ type PipelineView struct {
 type StepView struct {
 	Name     string         `json:"name"`
 	State    string         `json:"state"`
+	URL      string         `json:"url,omitempty"` // the step's page in Woodpecker
 	ExitCode int            `json:"exit_code,omitempty"`
 	Error    string         `json:"error,omitempty"`
 	Duration *time.Duration `json:"duration,omitempty"`
@@ -401,6 +402,9 @@ func (t *Tracker) view(repoID int64, p *Pipeline) PipelineView {
 	}
 	for _, s := range steps(p) {
 		sv := StepView{Name: s.Name, State: s.State, ExitCode: s.ExitCode, Error: s.Error}
+		if s.PID > 0 {
+			sv.URL = fmt.Sprintf("%s/%d", v.URL, s.PID)
+		}
 		if !isActive(p.Status) && isActive(s.State) {
 			// A finished pipeline can't have steps still going; they stopped when it was killed
 			sv.State = "killed"

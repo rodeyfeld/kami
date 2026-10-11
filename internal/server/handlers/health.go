@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"kami/internal/components/health"
 	"kami/internal/server"
 	"log"
@@ -37,5 +38,23 @@ func (h *HealthHandler) GetStatus(c echo.Context) error {
 		return health.ErrorState(err.Error()).Render(ctx, c.Response().Writer)
 	}
 
-	return health.StatusCards(status, h.server.Monitor.GetMode()).Render(ctx, c.Response().Writer)
+	return health.StatusCards(status, h.server.Monitor.GetMode(), h.history(ctx)).Render(ctx, c.Response().Writer)
+}
+
+// history reads the uptime window, or returns nil when kami isn't keeping one or can't read it
+func (h *HealthHandler) history(ctx context.Context) *health.History {
+	if h.server.Uptime == nil {
+		return nil
+	}
+	days, err := h.server.Uptime.History(ctx, health.UptimeDays)
+	if err != nil {
+		log.Printf("Error reading uptime: %v", err)
+		return nil
+	}
+	since, err := h.server.Uptime.Since(ctx)
+	if err != nil {
+		log.Printf("Error reading uptime: %v", err)
+		return nil
+	}
+	return &health.History{Days: days, Since: since}
 }

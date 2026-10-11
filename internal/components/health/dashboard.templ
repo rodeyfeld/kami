@@ -5,7 +5,7 @@ import (
 	"kami/internal/components/layout"
 	"kami/internal/k8s"
 	"kami/internal/monitor"
-	"math"
+	"kami/internal/uptime"
 	"sort"
 	"strings"
 	"time"
@@ -55,117 +55,77 @@ templ ErrorState(message string) {
 	</div>
 }
 
-templ StatusCards(status *monitor.Status, mode string) {
-	<div id="summary" class="flex flex-wrap items-center gap-x-16 gap-y-10">
-		@upRing(status, mode)
-		<div class="space-y-4">
-			@count("degraded", status.DegradedCount, "text-warning", "")
-			@count("down", status.DownCount, "text-error", "")
-			if mode == "kubernetes" {
-				@count("unverified", status.UnverifiedCount, "text-warning", "Up, but kami can't call their health check")
+templ StatusCards(status *monitor.Status, mode string, history *History) {
+	<div id="summary">
+		@overallUptime(status, history)
+		<p class="mt-6 text-sm text-base-content/40">
+			for i, t := range tallies(status, mode) {
+				if i > 0 {
+					<span class="text-base-content/20">{ " · " }</span>
+				}
+				<span title={ t.Title }><span class={ "font-serif text-base", t.Color }>{ fmt.Sprint(t.N) }</span> { t.Label }</span>
 			}
-		</div>
+		</p>
 	</div>
 	<div id="resources-container">
-		@ResourceTable(groupResources(status.Resources), mode)
+		@ResourceTable(groupResources(status.Resources), mode, history)
 	</div>
 	<span id="last-update">{ status.UpdatedAt.Format("15:04:05 UTC") }</span>
 }
 
-// upRing places one dot per component around a circle, tinted by its health, with the share up at its center
-templ upRing(status *monitor.Status, mode string) {
-	<div class="relative w-44 h-44 shrink-0">
-		<svg viewBox="0 0 100 100" class="absolute inset-0" aria-hidden="true">
-			<circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="0.3" class="text-base-content/10"></circle>
-			for _, d := range ringDots(status.Resources, mode) {
-				<circle cx={ d.X } cy={ d.Y } r={ d.R } fill="currentColor" class={ "ring-dot", d.Class }>
-					<title>{ d.Name }</title>
-				</circle>
+// overallUptime is the average of every project's uptime over the window, set large in the serif
+templ overallUptime(status *monitor.Status, history *History) {
+	{{ whole, frac, ok := splitPercent(history.overall(groupResources(status.Resources))) }}
+	<div>
+		<div class="font-serif leading-none text-base-content/90">
+			if ok {
+				<span class="text-6xl">{ whole }</span><span class="text-3xl text-base-content/40">{ frac }</span>
+			} else {
+				<span class="text-6xl text-base-content/20">—</span>
 			}
-		</svg>
-		<div class="absolute inset-0 flex flex-col items-center justify-center">
-			<div class="flex items-start font-serif leading-none">
-				<span class="text-5xl text-base-content/90">{ fmt.Sprint(status.UpCount) }</span>
-				<span class="text-4xl text-base-content/15 mx-0.5 -mt-0.5 rotate-12">/</span>
-				<span class="text-xl text-base-content/40 mt-6">{ fmt.Sprint(status.TotalCount) }</span>
-			</div>
-			<span class="eyebrow mt-3">online</span>
 		</div>
+		<p class="eyebrow mt-4" title={ history.note() }>{ history.label() }</p>
 	</div>
 }
 
-type ringDot struct {
-	X, Y, R string
-	Class   string
-	Name    string
-}
-
-// ringDots spaces the counted components (everything but scaled-to-zero ones) evenly around the ring, starting at the top
-func ringDots(resources []monitor.Resource, mode string) []ringDot {
-	counted := make([]monitor.Resource, 0, len(resources))
-	for _, group := range groupResources(resources) {
-		for _, r := range group.Resources {
-			if r.State != monitor.StateOff {
-				counted = append(counted, r)
-			}
-		}
-	}
-	radius := 1.8
-	if len(counted) > 36 {
-		radius = 1.2
-	}
-	dots := make([]ringDot, 0, len(counted))
-	for i, r := range counted {
-		angle := 2*math.Pi*float64(i)/float64(len(counted)) - math.Pi/2
-		_, color, motion := health(r, mode)
-		dots = append(dots, ringDot{
-			X:     fmt.Sprintf("%.2f", 50+44*math.Cos(angle)),
-			Y:     fmt.Sprintf("%.2f", 50+44*math.Sin(angle)),
-			R:     fmt.Sprintf("%.1f", radius),
-			Class: color + " " + motion,
-			Name:  r.Name,
-		})
-	}
-	return dots
-}
-
-templ count(label string, n int, color, title string) {
-	<div class="flex items-baseline gap-4" title={ title }>
-		<span class={ "dot self-center", countColor(n, color), templ.KV("opacity-30", n == 0) }></span>
-		<span class={ "font-serif text-3xl leading-none w-8", countColor(n, color) }>{ fmt.Sprint(n) }</span>
-		<span class="eyebrow">{ label }</span>
-	</div>
-}
-
-// ResourceTable shows one drawer per project: a single line with each component as a dot, opening to
+// ResourceTable shows one drawer per project: its daily uptime bars and percentage, opening to
 // the components' checks.
-templ ResourceTable(groups []resourceGroup, mode string) {
+templ ResourceTable(groups []resourceGroup, mode string, history *History) {
 	<div>
 		for _, group := range groups {
-			@drawer(group, mode)
+			@drawer(group, mode, history)
 		}
 		if len(groups) == 0 {
 			<p class="text-center py-10 text-base-content/40">nothing here</p>
+		} else {
+			<div class="flex items-center gap-4 pt-2 eyebrow whitespace-nowrap" aria-hidden="true">
+				<span class="w-2"></span>
+				<span class="uptime-name"></span>
+				<span class="flex-1 min-w-0 flex justify-center sm:justify-between">
+					<span class="hidden sm:inline">{ fmt.Sprint(UptimeDays) } days ago</span>
+					<span class="hidden sm:inline">today</span>
+					<span class="sm:hidden">last { fmt.Sprint(mobileDays) } days</span>
+				</span>
+				<span class="uptime-pct"></span>
+				<span class="uptime-state"></span>
+			</div>
 		}
 	</div>
 }
 
-templ drawer(group resourceGroup, mode string) {
+templ drawer(group resourceGroup, mode string, history *History) {
 	{{ label, color, motion := groupHealth(group.Resources, mode) }}
+	{{ days := history.days(uptime.GroupKey(group.Name)) }}
 	<details class="drawer-row" data-drawer={ group.Name }>
 		<summary class="flex items-center gap-4 py-2.5 cursor-pointer select-none">
 			<span class="chevron text-base-content/25 text-xs w-2">›</span>
-			<span class="font-mono text-[13px] whitespace-nowrap">{ group.Name }</span>
-			<span class="flex items-center gap-1.5">
-				for _, r := range group.Resources {
-					{{ _, c, _ := health(r, mode) }}
-					<span class={ "dot", c } title={ r.Name }></span>
-				}
-			</span>
-			<span class="ml-auto">
-				<span class={ "state text-sm", color }>
+			<span class="uptime-name font-mono text-[13px] truncate">{ group.Name }</span>
+			@bars(days)
+			@percent(days)
+			<span class="uptime-state">
+				<span class={ "state text-sm", color } title={ label }>
 					<span class={ "dot", motion }></span>
-					<span>{ label }</span>
+					<span class="hidden sm:inline">{ label }</span>
 				</span>
 			</span>
 		</summary>
@@ -173,7 +133,7 @@ templ drawer(group resourceGroup, mode string) {
 			<table class="quiet-table compact table-fixed">
 				<tbody>
 					for _, resource := range group.Resources {
-						@ResourceRow(resource, mode, true)
+						@ResourceRow(resource, mode, true, history.days(resource.Name))
 					}
 				</tbody>
 			</table>
@@ -181,9 +141,29 @@ templ drawer(group resourceGroup, mode string) {
 	</details>
 }
 
-templ ResourceRow(resource monitor.Resource, mode string, nested bool) {
+// bars draws one thin stroke per day, tinted by that day's uptime; phones only get the last month
+templ bars(days []uptime.Day) {
+	<span class="flex-1 min-w-0 flex items-stretch gap-[2px] h-6">
+		for i, d := range days {
+			<span class={ "uptime-bar", barColor(d), templ.KV("hidden sm:block", i < len(days)-mobileDays) } title={ barTitle(d) }></span>
+		}
+	</span>
+}
+
+templ percent(days []uptime.Day) {
+	{{ total := uptime.Sum(days) }}
+	<span class={ "uptime-pct font-mono text-xs text-right", percentColor(total) }>
+		if total.Total() > 0 {
+			{ formatPercent(total.Uptime()) }
+		} else {
+			—
+		}
+	</span>
+}
+
+templ ResourceRow(resource monitor.Resource, mode string, nested bool, days []uptime.Day) {
 	<tr>
-		<td class="w-[45%]">
+		<td class="w-[38%]">
 			<span class={ "font-mono text-[13px] whitespace-nowrap", templ.KV("text-base-content/70", nested) }>{ resource.Name }</span>
 			if resource.Type == "Job" {
 				<span class="eyebrow ml-2">job</span>
@@ -195,13 +175,16 @@ templ ResourceRow(resource monitor.Resource, mode string, nested bool) {
 		<td class="w-[20%]">
 			@HealthBadge(resource, mode)
 		</td>
+		<td class="w-[12%] hidden sm:table-cell">
+			@percent(days)
+		</td>
 		<td class="hidden sm:table-cell">
 			@CheckCell(resource)
 		</td>
 		if mode != "docker" {
 			<td class="hidden md:table-cell font-mono text-xs text-base-content/50 whitespace-nowrap">
 				if resource.Ping != nil && resource.Ping.StartedAt != nil {
-					<span>{ uptime(*resource.Ping.StartedAt) }</span>
+					<span>{ podAge(*resource.Ping.StartedAt) }</span>
 				} else {
 					<span class="text-base-content/20">—</span>
 				}
@@ -338,14 +321,7 @@ func groupHealth(rs []monitor.Resource, mode string) (string, string, string) {
 	}
 }
 
-func countColor(n int, color string) string {
-	if n > 0 {
-		return color
-	}
-	return "text-base-content/25"
-}
-
-func uptime(started time.Time) string {
+func podAge(started time.Time) string {
 	return strings.TrimSuffix(k8s.HumanizeAge(time.Since(started)), " ago")
 }
 
@@ -361,4 +337,29 @@ func plural(n int, word string) string {
 		return fmt.Sprintf("%d %s", n, word)
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+type tally struct {
+	N            int
+	Label, Color string
+	Title        string
+}
+
+// tallies counts components by health for the line under the uptime, leaving out the zeros
+func tallies(status *monitor.Status, mode string) []tally {
+	all := []tally{
+		{status.UpCount, "up", "text-success", ""},
+		{status.DegradedCount, "degraded", "text-warning", ""},
+		{status.DownCount, "down", "text-error", ""},
+	}
+	if mode == "kubernetes" {
+		all = append(all, tally{status.UnverifiedCount, "unverified", "text-warning", "Up, but kami can't call their health check"})
+	}
+	shown := make([]tally, 0, len(all))
+	for i, t := range all {
+		if t.N > 0 || i == 0 {
+			shown = append(shown, t)
+		}
+	}
+	return shown
 }
