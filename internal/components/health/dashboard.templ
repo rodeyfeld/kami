@@ -5,14 +5,15 @@ import (
 	"kami/internal/components/layout"
 	"kami/internal/k8s"
 	"kami/internal/monitor"
+	"math"
 	"sort"
 	"strings"
 	"time"
 )
 
 templ Dashboard(mode string) {
-	@layout.Base("Health Dashboard", "health") {
-		<div class="space-y-6">
+	@layout.Base("health", "health") {
+		<div class="space-y-10">
 			<!-- One poller refreshes every region with a single request -->
 			<div
 				hx-get="/partials/status"
@@ -21,77 +22,49 @@ templ Dashboard(mode string) {
 				hx-select-oob="#summary,#resources-container,#last-update"
 			></div>
 			if mode == "docker" {
-				<div class="bg-info/10 border border-info/30 rounded-lg px-4 py-2 text-sm flex items-center gap-2">
-					<span class="badge badge-sm badge-info">🐳 Docker</span>
-					<span class="text-info">Local development mode</span>
-				</div>
+				<p class="eyebrow">local docker mode</p>
 			}
 			<div id="summary">
 				@spinner()
 			</div>
-			<div class="bg-base-100 border border-base-300 rounded-box p-6">
-				<div id="resources-container">
-					@spinner()
-				</div>
-			</div>
-			<div class="text-center text-base-content/50 text-sm">
-				Last updated: <span id="last-update">never</span> • Auto-refresh every 10s
-			</div>
+			<div id="resources-container"></div>
+			<p class="eyebrow text-center">
+				<span id="last-update">…</span> · every 10s
+			</p>
 		</div>
 	}
 }
 
 templ spinner() {
-	<div class="flex justify-center py-8">
-		<span class="loading loading-spinner loading-md"></span>
+	<div class="flex justify-center py-10 text-base-content/40">
+		<span class="dot breathe-fast"></span>
 	</div>
 }
 
 templ StandaloneMode() {
-	<div id="summary" class="alert alert-warning shadow-lg">
-		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-		</svg>
-		<div>
-			<h3 class="font-bold">Standalone Mode</h3>
-			<div class="text-sm">Kubernetes client not available. Running without cluster monitoring.</div>
-		</div>
+	<div id="summary" class="notice border-warning/50">
+		<p class="text-warning">standalone</p>
+		<p class="text-base-content/50">No Kubernetes client, so there is no cluster to watch.</p>
 	</div>
 }
 
 templ ErrorState(message string) {
-	<div id="summary" class="alert alert-error shadow-lg">
-		<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-		</svg>
-		<div>
-			<h3 class="font-bold">Can't read cluster status</h3>
-			<div class="text-sm font-mono">{ message }</div>
-		</div>
+	<div id="summary" class="notice border-error/50">
+		<p class="text-error">can't read cluster status</p>
+		<p class="font-mono text-xs text-base-content/50 break-all mt-1">{ message }</p>
 	</div>
 }
 
 templ StatusCards(status *monitor.Status, mode string) {
-	<div id="summary" class="stats stats-vertical sm:stats-horizontal w-full bg-base-100 shadow">
-		<div class="stat">
-			<div class="stat-title">Up</div>
-			<div class="stat-value text-success">{ fmt.Sprint(status.UpCount) }<span class="text-base-content/40 text-2xl">/{ fmt.Sprint(status.TotalCount) }</span></div>
+	<div id="summary" class="flex flex-wrap items-center gap-x-16 gap-y-10">
+		@upRing(status, mode)
+		<div class="space-y-4">
+			@count("degraded", status.DegradedCount, "text-warning", "")
+			@count("down", status.DownCount, "text-error", "")
+			if mode == "kubernetes" {
+				@count("unverified", status.UnverifiedCount, "text-warning", "Up, but kami can't call their health check")
+			}
 		</div>
-		<div class="stat">
-			<div class="stat-title">Degraded</div>
-			<div class={ "stat-value", countColor(status.DegradedCount, "text-warning") }>{ fmt.Sprint(status.DegradedCount) }</div>
-		</div>
-		<div class="stat">
-			<div class="stat-title">Down</div>
-			<div class={ "stat-value", countColor(status.DownCount, "text-error") }>{ fmt.Sprint(status.DownCount) }</div>
-		</div>
-		if mode == "kubernetes" {
-			<div class="stat">
-				<div class="stat-title">Unverified</div>
-				<div class={ "stat-value", countColor(status.UnverifiedCount, "text-warning") }>{ fmt.Sprint(status.UnverifiedCount) }</div>
-				<div class="stat-desc">Up, but kami can't call their health check</div>
-			</div>
-		}
 	</div>
 	<div id="resources-container">
 		@ResourceTable(groupResources(status.Resources), mode)
@@ -99,81 +72,141 @@ templ StatusCards(status *monitor.Status, mode string) {
 	<span id="last-update">{ status.UpdatedAt.Format("15:04:05 UTC") }</span>
 }
 
-templ ResourceTable(groups []resourceGroup, mode string) {
-	<div class="overflow-x-auto">
-		<table class="table w-full">
-			<thead>
-				<tr>
-					<th>Component</th>
-					<th>Health</th>
-					if mode == "docker" {
-						<th>Status</th>
-					} else {
-						<th>Check</th>
-						<th>Uptime</th>
-					}
-				</tr>
-			</thead>
-			for _, group := range groups {
-				<tbody>
-					// Projects with one component get a single row instead of a header repeating its name
-					if len(group.Resources) > 1 {
-						<tr>
-							<th colspan="4" class="font-semibold">
-								<span class="flex items-center gap-2">
-									<i class={ "w-4 text-center", getServiceIconClass(group.Name) }></i>
-									<span>{ group.Name }</span>
-								</span>
-							</th>
-						</tr>
-					}
-					for _, resource := range group.Resources {
-						@ResourceRow(resource, mode, len(group.Resources) > 1)
-					}
-				</tbody>
+// upRing places one dot per component around a circle, tinted by its health, with the share up at its center
+templ upRing(status *monitor.Status, mode string) {
+	<div class="relative w-44 h-44 shrink-0">
+		<svg viewBox="0 0 100 100" class="absolute inset-0" aria-hidden="true">
+			<circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="0.3" class="text-base-content/10"></circle>
+			for _, d := range ringDots(status.Resources, mode) {
+				<circle cx={ d.X } cy={ d.Y } r={ d.R } fill="currentColor" class={ "ring-dot", d.Class }>
+					<title>{ d.Name }</title>
+				</circle>
 			}
-			if len(groups) == 0 {
-				<tbody>
-					<tr>
-						<td colspan="4" class="text-center py-8 text-base-content/50">No resources found.</td>
-					</tr>
-				</tbody>
-			}
-		</table>
+		</svg>
+		<div class="absolute inset-0 flex flex-col items-center justify-center">
+			<div class="flex items-start font-serif leading-none">
+				<span class="text-5xl text-base-content/90">{ fmt.Sprint(status.UpCount) }</span>
+				<span class="text-4xl text-base-content/15 mx-0.5 -mt-0.5 rotate-12">/</span>
+				<span class="text-xl text-base-content/40 mt-6">{ fmt.Sprint(status.TotalCount) }</span>
+			</div>
+			<span class="eyebrow mt-3">awake</span>
+		</div>
 	</div>
 }
 
+type ringDot struct {
+	X, Y, R string
+	Class   string
+	Name    string
+}
+
+// ringDots spaces the counted components (everything but scaled-to-zero ones) evenly around the ring, starting at the top
+func ringDots(resources []monitor.Resource, mode string) []ringDot {
+	counted := make([]monitor.Resource, 0, len(resources))
+	for _, group := range groupResources(resources) {
+		for _, r := range group.Resources {
+			if r.State != monitor.StateOff {
+				counted = append(counted, r)
+			}
+		}
+	}
+	radius := 1.8
+	if len(counted) > 36 {
+		radius = 1.2
+	}
+	dots := make([]ringDot, 0, len(counted))
+	for i, r := range counted {
+		angle := 2*math.Pi*float64(i)/float64(len(counted)) - math.Pi/2
+		_, color, motion := health(r, mode)
+		dots = append(dots, ringDot{
+			X:     fmt.Sprintf("%.2f", 50+44*math.Cos(angle)),
+			Y:     fmt.Sprintf("%.2f", 50+44*math.Sin(angle)),
+			R:     fmt.Sprintf("%.1f", radius),
+			Class: color + " " + motion,
+			Name:  r.Name,
+		})
+	}
+	return dots
+}
+
+templ count(label string, n int, color, title string) {
+	<div class="flex items-baseline gap-4" title={ title }>
+		<span class={ "dot self-center", countColor(n, color), templ.KV("opacity-30", n == 0) }></span>
+		<span class={ "font-serif text-3xl leading-none w-8", countColor(n, color) }>{ fmt.Sprint(n) }</span>
+		<span class="eyebrow">{ label }</span>
+	</div>
+}
+
+// ResourceTable shows one drawer per project: a single line with each component as a dot, opening to
+// the components' checks.
+templ ResourceTable(groups []resourceGroup, mode string) {
+	<div>
+		for _, group := range groups {
+			@drawer(group, mode)
+		}
+		if len(groups) == 0 {
+			<p class="text-center py-10 text-base-content/40">nothing here</p>
+		}
+	</div>
+}
+
+templ drawer(group resourceGroup, mode string) {
+	{{ label, color, motion := groupHealth(group.Resources, mode) }}
+	<details class="drawer-row" data-drawer={ group.Name }>
+		<summary class="flex items-center gap-4 py-2.5 cursor-pointer select-none">
+			<span class="chevron text-base-content/25 text-xs w-2">›</span>
+			<span class="font-mono text-[13px] whitespace-nowrap">{ group.Name }</span>
+			<span class="flex items-center gap-1.5">
+				for _, r := range group.Resources {
+					{{ _, c, _ := health(r, mode) }}
+					<span class={ "dot", c } title={ r.Name }></span>
+				}
+			</span>
+			<span class="ml-auto">
+				<span class={ "state text-sm", color }>
+					<span class={ "dot", motion }></span>
+					<span>{ label }</span>
+				</span>
+			</span>
+		</summary>
+		<div class="overflow-x-auto pl-6 pb-3">
+			<table class="quiet-table compact table-fixed">
+				<tbody>
+					for _, resource := range group.Resources {
+						@ResourceRow(resource, mode, true)
+					}
+				</tbody>
+			</table>
+		</div>
+	</details>
+}
+
 templ ResourceRow(resource monitor.Resource, mode string, nested bool) {
-	<tr class="hover">
-		<td class={ templ.KV("pl-12", nested) }>
-			<div class="flex items-center gap-2">
-				if !nested {
-					<i class={ "w-4 text-center", getServiceIconClass(resource.Group) }></i>
-				}
-				<span class="font-mono text-sm">{ resource.Name }</span>
-				if resource.Type == "Job" {
-					<span class="badge badge-xs badge-ghost">job</span>
-				}
-			</div>
+	<tr>
+		<td class="w-[45%]">
+			<span class={ "font-mono text-[13px] whitespace-nowrap", templ.KV("text-base-content/70", nested) }>{ resource.Name }</span>
+			if resource.Type == "Job" {
+				<span class="eyebrow ml-2">job</span>
+			}
 			if mode == "docker" && resource.Labels["id"] != "" {
-				<div class="text-xs text-base-content/50 font-mono">{ resource.Labels["id"] }</div>
+				<div class="text-xs text-base-content/40 font-mono">{ resource.Labels["id"] }</div>
 			}
 		</td>
-		<td>
+		<td class="w-[20%]">
 			@HealthBadge(resource, mode)
 		</td>
-		<td>
+		<td class="hidden sm:table-cell">
 			@CheckCell(resource)
 		</td>
 		if mode != "docker" {
-			<td class="text-sm font-mono">
+			<td class="hidden md:table-cell font-mono text-xs text-base-content/50 whitespace-nowrap">
 				if resource.Ping != nil && resource.Ping.StartedAt != nil {
 					<span>{ uptime(*resource.Ping.StartedAt) }</span>
 				} else {
-					<span class="text-base-content/40">-</span>
+					<span class="text-base-content/20">—</span>
 				}
 				if resource.Ping != nil && resource.Ping.Restarts > 0 {
-					<span class="text-warning" title="Container restarts in this pod">{ fmt.Sprintf(" · %d restarts", resource.Ping.Restarts) }</span>
+					<span class="text-warning" title="Container restarts in this pod">{ " · " + plural(int(resource.Ping.Restarts), "restart") }</span>
 				}
 			</td>
 		}
@@ -181,38 +214,41 @@ templ ResourceRow(resource monitor.Resource, mode string, nested bool) {
 }
 
 templ HealthBadge(resource monitor.Resource, mode string) {
-	{{ label, class := health(resource, mode) }}
-	<div class={ "badge badge-sm font-semibold", class }>{ label }</div>
+	{{ label, color, motion := health(resource, mode) }}
+	<span class={ "state", color }>
+		<span class={ "dot", motion }></span>
+		<span>{ label }</span>
+	</span>
 }
 
 // CheckCell says how health was determined: the probe kami called and its result, or why there wasn't one
 templ CheckCell(resource monitor.Resource) {
 	if p := resource.Ping; p == nil {
-		<span class="text-sm text-base-content/60">{ resource.Status }</span>
+		<span class="text-base-content/40">{ strings.ToLower(resource.Status) }</span>
 	} else {
-		<div class="flex items-center gap-2 text-sm font-mono">
+		<div class="flex items-center gap-3 font-mono text-xs">
 			switch p.Probe {
 				case "http":
-					<span class="text-base-content/70" title={ p.Path }>{ "GET " + truncate(p.Path, 32) }</span>
+					<span class="text-base-content/50" title={ p.Path }>{ "GET " + truncate(p.Path, 32) }</span>
 				case "tcp":
-					<span class="text-base-content/70">{ fmt.Sprintf("TCP :%d", p.Port) }</span>
+					<span class="text-base-content/50">{ fmt.Sprintf("tcp :%d", p.Port) }</span>
 				case "exec":
-					<span class="text-warning/80" title="exec probes run inside the container, so kami can't call them. This only reflects the pod's Ready flag.">exec probe · not callable</span>
+					<span class="text-warning/70" title="exec probes run inside the container, so kami can't call them. This only reflects the pod's Ready flag.">exec · not callable</span>
 				default:
-					<span class="text-warning" title="Add a readinessProbe to this workload in mirage so kami can check it.">no probe declared</span>
+					<span class="text-warning/70" title="Add a readinessProbe to this workload in mirage so kami can check it.">no probe</span>
 			}
 			if p.Verified() {
 				if p.OK {
 					if p.Probe == "tcp" {
-						<span class="text-success">open</span>
+						<span class="text-success/80">open</span>
 					} else {
-						<span class="text-success">{ fmt.Sprint(p.StatusCode) }</span>
+						<span class="text-success/80">{ fmt.Sprint(p.StatusCode) }</span>
 					}
-					<span class="text-base-content/50">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
+					<span class="text-base-content/30">{ fmt.Sprintf("%dms", p.LatencyMs) }</span>
 				} else if resource.State == monitor.StateUnresponsive {
 					<span class="text-error truncate max-w-xs" title={ p.Error }>{ p.Error }</span>
 				} else {
-					<span class="text-base-content/50">not called</span>
+					<span class="text-base-content/30">not called</span>
 				}
 			}
 		</div>
@@ -239,32 +275,66 @@ func groupResources(resources []monitor.Resource) []resourceGroup {
 	return groups
 }
 
-func health(r monitor.Resource, mode string) (string, string) {
+// health returns a lowercase label, its tint, and whether the dot breathes (alive) or holds still
+func health(r monitor.Resource, mode string) (string, string, string) {
 	switch r.State {
 	case monitor.StateUp:
 		if mode == "docker" {
-			return "Running", "badge-success text-white"
+			return "running", "text-success", "breathe"
 		}
-		return "Up", "badge-success text-white"
+		return "up", "text-success", "breathe"
 	case monitor.StateDown:
 		if mode == "docker" {
-			return "Stopped", "badge-error text-white"
+			return "stopped", "text-error", ""
 		}
-		return "Down", "badge-error text-white"
+		return "down", "text-error", ""
 	case monitor.StateUnresponsive:
-		return "Not responding", "badge-error text-white"
+		return "not responding", "text-error", ""
 	case monitor.StateDegraded:
-		return fmt.Sprintf("Degraded %d/%d", r.Current, r.Desired), "badge-warning text-black"
+		return fmt.Sprintf("degraded %d/%d", r.Current, r.Desired), "text-warning", "breathe-fast"
 	case monitor.StateOff:
-		return "Off", "badge-ghost"
+		return "off", "text-base-content/30", ""
 	case monitor.StateSucceeded:
-		return "Succeeded", "badge-success badge-outline"
+		return "succeeded", "text-success/60", ""
 	case monitor.StateRunning:
-		return "Running", "badge-info text-white"
+		return "running", "text-info", "breathe-fast"
 	case monitor.StateFailed:
-		return "Failed", "badge-error text-white"
+		return "failed", "text-error", ""
 	default:
-		return r.State, "badge-ghost"
+		return strings.ToLower(r.State), "text-base-content/40", ""
+	}
+}
+
+// groupHealth sums up a project by its worst component
+func groupHealth(rs []monitor.Resource, mode string) (string, string, string) {
+	var down, degraded, running, up, off int
+	for _, r := range rs {
+		switch r.State {
+		case monitor.StateDown, monitor.StateUnresponsive, monitor.StateFailed:
+			down++
+		case monitor.StateDegraded:
+			degraded++
+		case monitor.StateRunning:
+			running++
+		case monitor.StateOff:
+			off++
+		default:
+			up++
+		}
+	}
+	switch {
+	case len(rs) == 1:
+		return health(rs[0], mode)
+	case down > 0:
+		return fmt.Sprintf("%d of %d down", down, len(rs)), "text-error", ""
+	case degraded > 0:
+		return fmt.Sprintf("%d degraded", degraded), "text-warning", "breathe-fast"
+	case running > 0:
+		return fmt.Sprintf("%d running", running), "text-info", "breathe-fast"
+	case off == len(rs):
+		return "off", "text-base-content/30", ""
+	default:
+		return fmt.Sprintf("all %d up", up+off), "text-success", "breathe"
 	}
 }
 
@@ -272,7 +342,7 @@ func countColor(n int, color string) string {
 	if n > 0 {
 		return color
 	}
-	return "text-base-content/40"
+	return "text-base-content/25"
 }
 
 func uptime(started time.Time) string {
@@ -286,36 +356,9 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-func getServiceIconClass(name string) string {
-	// Match service names to their icons using prefix matching for flexibility
-	switch {
-	case strings.HasPrefix(name, "doppler"):
-		return "fa-solid fa-record-vinyl text-primary"
-	case strings.HasPrefix(name, "augur"):
-		return "fa-solid fa-satellite text-secondary"
-	case strings.HasPrefix(name, "luna"):
-		return "fa-solid fa-map text-primary"
-	case strings.HasPrefix(name, "kami"):
-		return "fa-solid fa-heart-pulse text-error"
-	case strings.HasPrefix(name, "noctis-prefect") || strings.HasPrefix(name, "prefect"):
-		return "fa-solid fa-server text-info"
-	case strings.HasPrefix(name, "noctis-postgres"):
-		return "fa-solid fa-database text-accent"
-	case strings.HasPrefix(name, "noctis"):
-		return "fa-solid fa-moon text-secondary"
-	case strings.HasPrefix(name, "oracle"):
-		return "fa-solid fa-clock text-warning"
-	case strings.HasPrefix(name, "cuneiform"):
-		return "fa-solid fa-key text-warning"
-	case strings.HasPrefix(name, "ouroboros"):
-		return "fa-solid fa-infinity text-success"
-	case strings.HasPrefix(name, "garage"):
-		return "fa-solid fa-hard-drive text-info"
-	case strings.HasPrefix(name, "atlas") || strings.HasPrefix(name, "postgres"):
-		return "fa-solid fa-database text-accent"
-	case strings.HasPrefix(name, "redis"):
-		return "fa-solid fa-server text-error"
-	default:
-		return "fa-solid fa-circle text-base-content/50"
+func plural(n int, word string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, word)
 	}
+	return fmt.Sprintf("%d %ss", n, word)
 }

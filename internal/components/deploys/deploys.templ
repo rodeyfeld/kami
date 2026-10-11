@@ -10,8 +10,8 @@ import (
 )
 
 templ Page() {
-	@layout.Base("Deploys", "deploys") {
-		<div class="space-y-6">
+	@layout.Base("deploys", "deploys") {
+		<div class="space-y-10">
 			<div
 				hx-get="/partials/deploys"
 				hx-trigger="load, every 5s"
@@ -22,40 +22,33 @@ templ Page() {
 			<div id="in-progress">
 				@spinner()
 			</div>
-			<div class="grid gap-6 xl:grid-cols-5">
-				<section class="bg-base-100 border border-base-300 rounded-box p-6 xl:col-span-3">
-					<h2 class="text-lg font-semibold mb-1">Rollouts</h2>
-					<p class="text-sm text-base-content/50 mb-4">Each restart or spec change makes a new revision</p>
-					<div id="rollouts">
-						@spinner()
-					</div>
+			<div class="grid gap-16 lg:grid-cols-5">
+				<section class="lg:col-span-3 min-w-0">
+					<h2 class="eyebrow">rollouts</h2>
+					<p class="text-xs text-base-content/30 mt-1 mb-6">each restart or spec change is a new revision</p>
+					<div id="rollouts"></div>
 				</section>
-				<section class="bg-base-100 border border-base-300 rounded-box p-6 xl:col-span-2">
-					<div id="steps">
-						@spinner()
-					</div>
+				<section class="lg:col-span-2 min-w-0">
+					<div id="steps"></div>
 				</section>
 			</div>
-			<div class="text-center text-base-content/50 text-sm">
-				Last updated: <span id="deploys-updated">never</span> • Auto-refresh every 5s
-			</div>
+			<p class="eyebrow text-center">
+				<span id="deploys-updated">…</span> · every 5s
+			</p>
 		</div>
 	}
 }
 
 templ spinner() {
-	<div class="flex justify-center py-8">
-		<span class="loading loading-spinner loading-md"></span>
+	<div class="flex justify-center py-10 text-base-content/40">
+		<span class="dot breathe-fast"></span>
 	</div>
 }
 
 templ Unavailable(message string) {
-	<div id="deploys-error" class="alert alert-warning shadow-lg">
-		<i class="fa-solid fa-triangle-exclamation"></i>
-		<div>
-			<h3 class="font-bold">Deploy tracking unavailable</h3>
-			<div class="text-sm font-mono">{ message }</div>
-		</div>
+	<div id="deploys-error" class="notice border-warning/50">
+		<p class="text-warning">deploy tracking unavailable</p>
+		<p class="font-mono text-xs text-base-content/50 break-all mt-1">{ message }</p>
 	</div>
 	<div id="in-progress"></div>
 	<div id="rollouts"></div>
@@ -65,9 +58,8 @@ templ Unavailable(message string) {
 templ Content(d *k8s.Deploys) {
 	<div id="deploys-error">
 		if d.Error != "" {
-			<div class="alert alert-error shadow-lg">
-				<i class="fa-solid fa-circle-exclamation"></i>
-				<div class="text-sm font-mono">{ d.Error }</div>
+			<div class="notice border-error/50">
+				<p class="font-mono text-xs text-error break-all">{ d.Error }</p>
 			</div>
 		}
 	</div>
@@ -79,13 +71,13 @@ templ Content(d *k8s.Deploys) {
 	</div>
 	<div id="steps">
 		if d.CI != nil && len(d.Pipelines) > 0 {
-			<h2 class="text-lg font-semibold mb-1">Pipelines</h2>
-			<p class="text-sm text-base-content/50 mb-4">Recent Woodpecker runs across every public repo</p>
+			<h2 class="eyebrow">pipelines</h2>
+			<p class="text-xs text-base-content/30 mt-1 mb-6">recent woodpecker runs across every public repo</p>
 			@ciWarning(d.CI)
 			@PipelineList(d.Pipelines)
 		} else {
-			<h2 class="text-lg font-semibold mb-1">Pipeline steps</h2>
-			<p class="text-sm text-base-content/50 mb-4">Woodpecker steps seen running in the cluster</p>
+			<h2 class="eyebrow">pipeline steps</h2>
+			<p class="text-xs text-base-content/30 mt-1 mb-6">woodpecker steps seen running in the cluster</p>
 			if d.CI != nil {
 				@ciWarning(d.CI)
 			}
@@ -97,40 +89,34 @@ templ Content(d *k8s.Deploys) {
 
 templ InProgress(rollouts []k8s.Rollout, pipelines []woodpecker.PipelineView) {
 	if len(rollouts) == 0 && len(pipelines) == 0 {
-		<div class="bg-base-100 border border-base-300 rounded-box px-6 py-4 flex items-center gap-3 text-base-content/70">
-			<i class="fa-solid fa-circle-check text-success"></i>
-			<span>Nothing rolling out</span>
-		</div>
+		<p class="text-center font-serif text-lg tracking-widest text-base-content/30">all is still</p>
 	} else {
-		<div class="space-y-3">
+		<div class="space-y-8">
 			for _, p := range pipelines {
 				@activePipeline(p)
 			}
 			for _, r := range rollouts {
-				<div class={ "bg-base-100 border rounded-box px-6 py-4", templ.KV("border-error", r.State == k8s.RolloutStuck), templ.KV("border-info", r.State == k8s.RolloutRolling) }>
-					<div class="flex flex-wrap items-center gap-3">
+				<div class={ "border-l pl-5", templ.KV("border-error/60", r.State == k8s.RolloutStuck), templ.KV("border-info/60", r.State == k8s.RolloutRolling) }>
+					<div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 						if r.State == k8s.RolloutStuck {
-							<span class="badge badge-error text-white font-semibold">Stuck</span>
+							<span class="state text-error"><span class="dot"></span>stuck</span>
 						} else {
-							<span class="badge badge-info text-white font-semibold gap-1">
-								<span class="loading loading-spinner loading-xs"></span>
-								Rolling
-							</span>
+							<span class="state text-info"><span class="dot breathe-fast"></span>rolling</span>
 						}
-						<span class="font-mono font-semibold">{ r.Workload }</span>
+						<span class="font-mono">{ r.Workload }</span>
 						if r.Revision > 0 {
-							<span class="text-sm text-base-content/50">{ fmt.Sprintf("rev %d", r.Revision) }</span>
+							<span class="text-xs text-base-content/40">{ fmt.Sprintf("rev %d", r.Revision) }</span>
 						}
-						<span class="text-sm font-mono">{ fmt.Sprintf("%d/%d ready", r.Ready, r.Desired) }</span>
-						<span class="text-sm text-base-content/50">{ "started " + k8s.HumanizeAge(time.Since(r.StartedAt)) }</span>
+						<span class="font-mono text-xs text-base-content/60">{ fmt.Sprintf("%d/%d ready", r.Ready, r.Desired) }</span>
+						<span class="text-xs text-base-content/40">{ "started " + k8s.HumanizeAge(time.Since(r.StartedAt)) }</span>
 					</div>
 					if r.Pipeline != nil {
-						<div class="mt-1 text-sm">
+						<div class="mt-2 text-xs">
 							@pipelineRef(r.Pipeline, true)
 						</div>
 					}
 					if r.Reason != "" {
-						<div class="mt-2 text-sm font-mono text-error break-all">{ r.Reason }</div>
+						<div class="mt-2 font-mono text-xs text-error/90 break-all">{ r.Reason }</div>
 					}
 				</div>
 			}
@@ -140,21 +126,21 @@ templ InProgress(rollouts []k8s.Rollout, pipelines []woodpecker.PipelineView) {
 
 templ RolloutTable(rollouts []k8s.Rollout) {
 	<div class="overflow-x-auto">
-		<table class="table table-sm w-full">
+		<table class="quiet-table">
 			<thead>
 				<tr>
-					<th>Workload</th>
-					<th>Result</th>
-					<th>Image</th>
-					<th>When</th>
+					<th>workload</th>
+					<th>result</th>
+					<th class="hidden sm:table-cell">image</th>
+					<th>when</th>
 				</tr>
 			</thead>
 			<tbody>
 				for _, r := range rollouts {
-					<tr class={ "hover", templ.KV("opacity-60", r.State == k8s.RolloutSuperseded) }>
+					<tr class={ templ.KV("opacity-40", r.State == k8s.RolloutSuperseded) }>
 						<td>
-							<div class="font-mono text-sm">{ r.Workload }</div>
-							<div class="text-xs text-base-content/50">
+							<div class="font-mono text-[13px] whitespace-nowrap">{ r.Workload }</div>
+							<div class="text-xs text-base-content/40 mt-0.5">
 								if r.Revision > 0 {
 									{ fmt.Sprintf("rev %d", r.Revision) }
 								}
@@ -166,25 +152,25 @@ templ RolloutTable(rollouts []k8s.Rollout) {
 								}
 							</div>
 							if r.Pipeline != nil {
-								<div class="text-xs mt-0.5">
+								<div class="text-xs mt-1">
 									@pipelineRef(r.Pipeline, false)
 								</div>
 							}
 						</td>
-						<td class="text-sm whitespace-nowrap">
+						<td class="whitespace-nowrap">
 							@result(r)
 						</td>
-						<td>
+						<td class="hidden sm:table-cell">
 							@image(r)
 						</td>
-						<td class="text-sm text-base-content/70 whitespace-nowrap" title={ r.StartedAt.Format(time.RFC3339) }>
+						<td class="text-xs text-base-content/40 whitespace-nowrap" title={ r.StartedAt.Format(time.RFC3339) }>
 							{ k8s.HumanizeAge(time.Since(r.StartedAt)) }
 						</td>
 					</tr>
 				}
 				if len(rollouts) == 0 {
 					<tr>
-						<td colspan="4" class="text-center py-8 text-base-content/50">No rollouts found.</td>
+						<td colspan="4" class="text-center py-10 text-base-content/40">no rollouts</td>
 					</tr>
 				}
 			</tbody>
@@ -196,68 +182,68 @@ templ result(r k8s.Rollout) {
 	switch r.State {
 		case k8s.RolloutDone:
 			if r.Desired == 0 {
-				<span class="badge badge-sm badge-ghost">Scaled to 0</span>
+				<span class="state text-base-content/30"><span class="dot-hollow"></span>scaled to 0</span>
 			} else {
-				<span class="badge badge-sm badge-success text-white">Live</span>
+				<span class="state text-success"><span class="dot breathe"></span>live</span>
 			}
 		case k8s.RolloutSuperseded:
-			<span class="badge badge-sm badge-ghost">Replaced</span>
+			<span class="state text-base-content/40"><span class="dot-hollow"></span>replaced</span>
 		case k8s.RolloutWaiting:
-			<span class="badge badge-sm badge-warning badge-outline" title={ r.Reason }>Waits for pod delete</span>
+			<span class="state text-warning" title={ r.Reason }><span class="dot-hollow"></span>waits for pod delete</span>
 		default:
-			<span class="badge badge-sm badge-info text-white">{ r.State }</span>
+			<span class="state text-info"><span class="dot"></span>{ r.State }</span>
 	}
 	if r.ReadyAt != nil && r.ReadyAt.After(r.StartedAt) {
-		<span class="text-base-content/50">{ " ready in " + shortDuration(r.ReadyAt.Sub(r.StartedAt)) }</span>
+		<div class="text-xs text-base-content/30 mt-0.5 pl-3.5">{ "ready in " + shortDuration(r.ReadyAt.Sub(r.StartedAt)) }</div>
 	}
 }
 
 // image shows whether a revision runs a new build. Every image is pushed as :latest, so a restart
 // with an unchanged digest means the pipeline restarted the old build.
 templ image(r k8s.Rollout) {
-	<div class="flex items-center gap-2 whitespace-nowrap">
+	<div class="whitespace-nowrap text-xs">
 		if changed := r.ImageChanged(); changed != nil {
 			if *changed {
-				<span class="badge badge-sm badge-success badge-outline">new build</span>
+				<div class="text-success/80">new build</div>
 			} else {
-				<span class="badge badge-sm badge-warning badge-outline" title="Restarted, but the pod pulled the same image as the previous revision">same build</span>
+				<div class="text-warning/80" title="Restarted, but the pod pulled the same image as the previous revision">same build</div>
 			}
 		}
 		if r.Digest != "" {
-			<span class="font-mono text-xs text-base-content/50" title={ r.Digest }>{ shortDigest(r.Digest) }</span>
+			<div class="font-mono text-base-content/30 mt-0.5" title={ r.Digest }>{ shortDigest(r.Digest) }</div>
 		} else if r.ImageChanged() == nil {
-			<span class="text-base-content/40">-</span>
+			<span class="text-base-content/20">—</span>
 		}
 	</div>
 }
 
 templ StepTable(steps []k8s.Step) {
 	<div class="overflow-x-auto">
-		<table class="table table-sm w-full">
+		<table class="quiet-table">
 			<thead>
 				<tr>
-					<th>Repo</th>
-					<th>Step</th>
-					<th>Status</th>
-					<th>When</th>
+					<th>repo</th>
+					<th>step</th>
+					<th>status</th>
+					<th>when</th>
 				</tr>
 			</thead>
 			<tbody>
 				for _, s := range steps {
-					<tr class="hover">
-						<td class="font-mono text-sm">{ s.Repo }</td>
-						<td class="font-mono text-sm">{ s.Name }</td>
-						<td class="text-sm">
+					<tr>
+						<td class="font-mono text-[13px]">{ s.Repo }</td>
+						<td class="font-mono text-[13px] text-base-content/70">{ s.Name }</td>
+						<td>
 							@stepStatus(s)
 						</td>
-						<td class="text-sm text-base-content/70 whitespace-nowrap" title={ s.StartedAt.Format(time.RFC3339) }>
+						<td class="text-xs text-base-content/40 whitespace-nowrap" title={ s.StartedAt.Format(time.RFC3339) }>
 							{ k8s.HumanizeAge(time.Since(s.StartedAt)) }
 						</td>
 					</tr>
 				}
 				if len(steps) == 0 {
 					<tr>
-						<td colspan="4" class="text-center py-8 text-base-content/50">
+						<td colspan="4" class="text-center py-10 text-xs text-base-content/40">
 							No steps since kami started. Woodpecker deletes step pods when they finish, so kami only knows about steps it saw.
 						</td>
 					</tr>
@@ -268,21 +254,18 @@ templ StepTable(steps []k8s.Step) {
 }
 
 templ stepStatus(s k8s.Step) {
-	<div class="flex items-center gap-2">
-		switch s.Phase {
-			case "Succeeded":
-				<i class="fa-solid fa-check text-success"></i>
-			case "Failed":
-				<i class="fa-solid fa-xmark text-error"></i>
-			case "Running":
-				<span class="loading loading-spinner loading-xs text-info"></span>
-			default:
-				<i class="fa-regular fa-clock text-base-content/50"></i>
-		}
-		<span class="text-base-content/70">{ stepDuration(s) }</span>
-	</div>
+	switch s.Phase {
+		case "Succeeded":
+			<span class="state text-success"><span class="dot"></span>{ stepDuration(s) }</span>
+		case "Failed":
+			<span class="state text-error"><span class="dot"></span>{ stepDuration(s) }</span>
+		case "Running":
+			<span class="state text-info"><span class="dot breathe-fast"></span>{ stepDuration(s) }</span>
+		default:
+			<span class="state text-base-content/40"><span class="dot-hollow"></span>{ stepDuration(s) }</span>
+	}
 	if s.Reason != "" {
-		<div class="text-xs font-mono text-error break-all">{ s.Reason }</div>
+		<div class="text-xs font-mono text-error/90 break-all mt-0.5">{ s.Reason }</div>
 	}
 }
 
@@ -337,10 +320,9 @@ func shortDigest(digest string) string {
 
 // pipelineRef links a rollout to the run that caused it. A run from another repo is mirage restarting everything.
 templ pipelineRef(p *woodpecker.PipelineView, withMessage bool) {
-	<a href={ templ.SafeURL(p.URL) } target="_blank" title={ p.Message } class="link link-hover text-base-content/70 inline-flex items-center gap-1 whitespace-nowrap">
-		<i class="fa-solid fa-code-commit text-base-content/40"></i>
+	<a href={ templ.SafeURL(p.URL) } target="_blank" title={ p.Message } class="quiet-link text-base-content/40 inline-flex items-baseline gap-2 whitespace-nowrap max-w-full">
 		<span class="font-mono">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</span>
-		<span class="font-mono text-base-content/50">{ p.Commit }</span>
+		<span class="font-mono text-base-content/25">{ p.Commit }</span>
 		if withMessage {
 			<span class="truncate max-w-md">{ p.Message }</span>
 		}
@@ -348,65 +330,59 @@ templ pipelineRef(p *woodpecker.PipelineView, withMessage bool) {
 }
 
 templ activePipeline(p woodpecker.PipelineView) {
-	<div class={ "bg-base-100 border rounded-box px-6 py-4", templ.KV("border-warning", p.Queued()), templ.KV("border-info", !p.Queued()) }>
-		<div class="flex flex-wrap items-center gap-3">
+	<div class={ "border-l pl-5", templ.KV("border-warning/60", p.Queued()), templ.KV("border-info/60", !p.Queued()) }>
+		<div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 			if p.Queued() {
-				<span class="badge badge-warning text-black font-semibold">Queued</span>
+				<span class="state text-warning"><span class="dot"></span>queued</span>
 			} else {
-				<span class="badge badge-info text-white font-semibold gap-1">
-					<span class="loading loading-spinner loading-xs"></span>
-					Building
-				</span>
+				<span class="state text-info"><span class="dot breathe-fast"></span>building</span>
 			}
-			<a href={ templ.SafeURL(p.URL) } target="_blank" class="link link-hover font-mono font-semibold">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</a>
-			<span class="font-mono text-sm text-base-content/50">{ p.Commit }</span>
-			<span class="text-sm truncate max-w-md" title={ p.Message }>{ p.Message }</span>
-			<span class="text-sm text-base-content/50">{ "created " + k8s.HumanizeAge(time.Since(p.Created)) }</span>
+			<a href={ templ.SafeURL(p.URL) } target="_blank" class="quiet-link font-mono">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</a>
+			<span class="font-mono text-xs text-base-content/30">{ p.Commit }</span>
+			<span class="text-sm text-base-content/70 truncate max-w-md" title={ p.Message }>{ p.Message }</span>
+			<span class="text-xs text-base-content/40">{ k8s.HumanizeAge(time.Since(p.Created)) }</span>
 		</div>
 		<div class="mt-2">
 			@stepChips(p.Steps)
 		</div>
 		if p.Queued() {
-			<div class="mt-2 text-sm text-warning">Waiting to start for over 2 minutes. Check that ouroboros-agent is running and can create pods.</div>
+			<p class="mt-2 text-xs text-warning/90">Waiting to start for over 2 minutes. Check that ouroboros-agent is running and can create pods.</p>
 		}
 	</div>
 }
 
 templ ciWarning(s *woodpecker.Status) {
 	if s.Error != "" {
-		<div class="alert alert-warning py-2 mb-4 text-sm">
-			<i class="fa-solid fa-triangle-exclamation"></i>
-			<span>
-				{ "Can't follow Woodpecker: " }
-				<span class="font-mono">{ s.Error }</span>
-			</span>
+		<div class="notice border-warning/50 mb-6">
+			<p class="text-xs text-warning">can't follow woodpecker</p>
+			<p class="font-mono text-xs text-base-content/50 break-all">{ s.Error }</p>
 		</div>
 	}
 }
 
 templ PipelineList(pipelines []woodpecker.PipelineView) {
-	<ul class="divide-y divide-base-300">
+	<ul>
 		for _, p := range pipelines {
-			<li class="py-3">
-				<div class="flex items-center gap-2 text-sm">
+			<li class="py-4 border-t border-base-content/5 first:border-t-0 first:pt-0">
+				<div class="flex items-baseline gap-3 text-sm">
 					@pipelineIcon(p.Status)
-					<a href={ templ.SafeURL(p.URL) } target="_blank" class="link link-hover font-mono font-semibold">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</a>
+					<a href={ templ.SafeURL(p.URL) } target="_blank" class="quiet-link font-mono text-[13px]">{ fmt.Sprintf("%s #%d", p.Repo, p.Number) }</a>
 					if p.CommitURL != "" {
-						<a href={ templ.SafeURL(p.CommitURL) } target="_blank" class="link link-hover font-mono text-base-content/50">{ p.Commit }</a>
+						<a href={ templ.SafeURL(p.CommitURL) } target="_blank" class="quiet-link font-mono text-xs text-base-content/30">{ p.Commit }</a>
 					}
-					<span class="ml-auto text-base-content/50 whitespace-nowrap" title={ p.Created.Format(time.RFC3339) }>{ k8s.HumanizeAge(time.Since(p.Created)) }</span>
+					<span class="ml-auto text-xs text-base-content/30 whitespace-nowrap" title={ p.Created.Format(time.RFC3339) }>{ k8s.HumanizeAge(time.Since(p.Created)) }</span>
 				</div>
-				<div class="text-sm text-base-content/80 truncate mt-0.5" title={ p.Message }>{ p.Message }</div>
-				<div class="flex items-center gap-2 mt-1">
+				<div class="text-sm text-base-content/60 truncate mt-1 pl-[18px]" title={ p.Message }>{ p.Message }</div>
+				<div class="mt-2 pl-[18px] flex items-baseline gap-3">
 					@stepChips(p.Steps)
 					if p.Event != "push" {
-						<span class="badge badge-xs badge-ghost">{ p.Event }</span>
+						<span class="eyebrow">{ p.Event }</span>
 					}
 				</div>
 				if p.FailedStep != "" && len(p.LogTail) > 0 {
-					<details class="mt-2" open?={ time.Since(p.Created) < time.Hour }>
-						<summary class="text-xs text-error cursor-pointer">{ "Last lines of " + p.FailedStep }</summary>
-						<pre class="mt-1 text-xs bg-base-300 rounded p-2 overflow-x-auto max-h-64">{ strings.Join(p.LogTail, "\n") }</pre>
+					<details class="mt-3 pl-[18px]" open?={ time.Since(p.Created) < time.Hour }>
+						<summary class="text-xs text-error/80 cursor-pointer">{ "last lines of " + p.FailedStep }</summary>
+						<pre class="mt-2 font-mono text-[11px] leading-relaxed text-base-content/50 border-l border-error/30 pl-3 overflow-x-auto max-h-64">{ strings.Join(p.LogTail, "\n") }</pre>
 					</details>
 				}
 			</li>
@@ -417,25 +393,26 @@ templ PipelineList(pipelines []woodpecker.PipelineView) {
 templ pipelineIcon(status string) {
 	switch status {
 		case "success":
-			<i class="fa-solid fa-check text-success w-4 text-center"></i>
+			<span class="text-success" title={ status }><span class="dot"></span></span>
 		case "failure", "error", "killed":
-			<i class="fa-solid fa-xmark text-error w-4 text-center"></i>
+			<span class="text-error" title={ status }><span class="dot"></span></span>
 		case "running":
-			<span class="loading loading-spinner loading-xs text-info"></span>
+			<span class="text-info" title={ status }><span class="dot breathe-fast"></span></span>
 		case "pending", "created":
-			<i class="fa-regular fa-clock text-warning w-4 text-center"></i>
+			<span class="text-warning" title={ status }><span class="dot-hollow"></span></span>
 		default:
-			<i class="fa-solid fa-minus text-base-content/40 w-4 text-center" title={ status }></i>
+			<span class="text-base-content/30" title={ status }><span class="dot-hollow"></span></span>
 	}
 }
 
+// stepChips lists steps as quiet words tinted by state, with how long each took
 templ stepChips(steps []woodpecker.StepView) {
-	<div class="flex flex-wrap gap-1">
+	<div class="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
 		for _, s := range steps {
-			<span class={ "badge badge-sm font-mono gap-1", stepClass(s.State) } title={ stepTitle(s) }>
+			<span class={ stepClass(s.State) } title={ stepTitle(s) }>
 				{ s.Name }
 				if s.Duration != nil {
-					<span class="opacity-60">{ shortDuration(*s.Duration) }</span>
+					<span class="text-base-content/25">{ shortDuration(*s.Duration) }</span>
 				}
 			</span>
 		}
@@ -455,13 +432,13 @@ func activePipelines(pipelines []woodpecker.PipelineView) []woodpecker.PipelineV
 func stepClass(state string) string {
 	switch state {
 	case "success":
-		return "badge-success badge-outline"
+		return "text-success/80"
 	case "failure", "error", "killed":
-		return "badge-error text-white"
+		return "text-error"
 	case "running":
-		return "badge-info text-white"
+		return "text-info breathe-fast"
 	default:
-		return "badge-ghost"
+		return "text-base-content/30"
 	}
 }
 

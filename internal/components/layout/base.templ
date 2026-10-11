@@ -2,32 +2,34 @@ package layout
 
 templ Base(title string, active string) {
 	<!DOCTYPE html>
-	<html lang="en" data-theme="dark">
+	<html lang="en" data-theme="kami">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<title>{ title } - Kami</title>
+			<title>{ title } · kami</title>
 			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
-			<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+			<link rel="preconnect" href="https://fonts.googleapis.com"/>
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+			<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&family=Shippori+Mincho:wght@400&display=swap"/>
 			<link rel="stylesheet" href="/static/css/output.css"/>
 		</head>
-		<body class="min-h-screen bg-base-200">
-			<div class="container mx-auto px-4 py-8">
-				<header class="mb-8 flex justify-between items-start">
-					<div>
-						<h1 class="text-4xl font-bold wordmark">神 Kami</h1>
-						<p class="text-base-content/70 mt-2">Pinwheel Labs Health Monitor</p>
-					</div>
-					<nav class="flex items-center gap-1">
-						@navLink("/", "fa-heart-pulse", "Health", active == "health")
-						@navLink("/deploys", "fa-rocket", "Deploys", active == "deploys")
-						<a href="https://pinwheel.fan" class="btn btn-ghost btn-sm gap-2 hover:btn-primary transition-all">
-							<i class="fa-solid fa-grip"></i>
-							<span class="hidden sm:inline">All Projects</span>
-						</a>
+		<body class="min-h-screen">
+			@spirits()
+			<div class="max-w-5xl mx-auto px-6 sm:px-10 py-10 sm:py-14">
+				<header class="mb-12 sm:mb-16 flex flex-wrap items-end justify-between gap-6 materialize">
+					<a href="/" class="flex items-baseline gap-3 group">
+						<span class="logo w-10 h-10 self-center text-base-content/85">
+							@Spirit(true)
+						</span>
+						<span class="font-serif text-xl tracking-[0.35em] text-base-content/60 group-hover:text-base-content/90 transition-colors duration-700">kami</span>
+					</a>
+					<nav class="flex items-center gap-8">
+						@navLink("/", "health", active == "health")
+						@navLink("/deploys", "deploys", active == "deploys")
+						<a href="https://pinwheel.fan" class="nav-link">pinwheel ↗</a>
 					</nav>
 				</header>
-				<main>
+				<main class="materialize-late">
 					{ children... }
 				</main>
 			</div>
@@ -36,9 +38,49 @@ templ Base(title string, active string) {
 	</html>
 }
 
-templ navLink(href string, icon string, label string, active bool) {
-	<a href={ templ.SafeURL(href) } class={ "btn btn-sm gap-2", templ.KV("btn-primary", active), templ.KV("btn-ghost", !active) }>
-		<i class={ "fa-solid", icon }></i>
-		<span class="hidden sm:inline">{ label }</span>
-	</a>
+templ navLink(href string, label string, active bool) {
+	if active {
+		<a href={ templ.SafeURL(href) } class="nav-link" aria-current="page">{ label }</a>
+	} else {
+		<a href={ templ.SafeURL(href) } class="nav-link">{ label }</a>
+	}
+}
+
+// Spirit is a hitodama: a round head trailing a tail that curls away like a flame. With eyes it's the
+// logo; without, one of the spirits drifting in the background.
+templ Spirit(eyes bool) {
+	<svg viewBox="0 0 32 32" class="w-full h-full" aria-hidden="true">
+		if eyes {
+			<path fill="currentColor" fill-rule="evenodd" d={ spiritPath + spiritEyes }></path>
+		} else {
+			<path fill="currentColor" d={ spiritPath }></path>
+		}
+	</svg>
+}
+
+const (
+	spiritPath = "M16 3.5C21.2 3.5 24.5 7.6 24.5 12.3C24.5 17.6 20.6 20.4 18.3 23.9C16.6 26.6 13.6 29.2 8.6 29.4C11.6 27.4 12.9 25.2 12.3 22.7C9.4 20.6 7.5 17 7.5 12.3C7.5 7.6 10.8 3.5 16 3.5Z"
+	spiritEyes = "M12.6 12.4a1.1 1.5 0 1 0 2.2 0a1.1 1.5 0 1 0 -2.2 0ZM17.2 12.4a1.1 1.5 0 1 0 2.2 0a1.1 1.5 0 1 0 -2.2 0Z"
+)
+
+// spirits drift up the page behind everything, each at its own size, pace and sway
+templ spirits() {
+	<div class="spirits" aria-hidden="true">
+		<span class="spirit" style="left: 6%; width: 22px; animation-duration: 64s; animation-delay: -10s; --peak: 0.10;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 17%; width: 12px; animation-duration: 82s; animation-delay: -47s; --peak: 0.07;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 29%; width: 16px; animation-duration: 71s; animation-delay: -25s; --peak: 0.06;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 44%; width: 10px; animation-duration: 95s; animation-delay: -70s; --peak: 0.06;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 58%; width: 26px; animation-duration: 76s; animation-delay: -3s; --peak: 0.08;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 70%; width: 14px; animation-duration: 88s; animation-delay: -55s; --peak: 0.07;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 81%; width: 18px; animation-duration: 68s; animation-delay: -33s; --peak: 0.09;"><span>@Spirit(false)
+</span></span>
+		<span class="spirit" style="left: 92%; width: 11px; animation-duration: 99s; animation-delay: -80s; --peak: 0.06;"><span>@Spirit(false)
+</span></span>
+	</div>
 }

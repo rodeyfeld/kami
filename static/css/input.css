@@ -2,103 +2,215 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Smooth HTMX transitions */
-.htmx-swapping {
-  opacity: 0.95;
-  transition: opacity 200ms ease-out;
-}
-
-.htmx-settling {
-  opacity: 1;
-  transition: opacity 200ms ease-in;
-}
-
-/* Custom animations */
-@keyframes fadeIn {
-	from {
-		opacity: 0;
-		transform: translateY(10px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-@keyframes scaleIn {
-	from {
-		opacity: 0;
-		transform: scale(0.95);
-	}
-	to {
-		opacity: 1;
-		transform: scale(1);
-	}
-}
-
-/* Apply smooth animations */
-.animate-fadeIn {
-	animation: fadeIn 0.6s ease-out;
-}
-
-.animate-scaleIn {
-	animation: scaleIn 0.4s ease-out;
-}
-
-/* Hover lift effect */
-.hover-lift {
-	transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.hover-lift:hover {
-	transform: translateY(-5px);
-	box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
-}
-
-/* Smooth transitions for all interactive elements */
-button, a, .card {
-	transition: all 0.3s ease;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-	width: 10px;
-}
-
-::-webkit-scrollbar-track {
-	background: oklch(var(--b2));
-}
-
-::-webkit-scrollbar-thumb {
-	background: oklch(var(--p));
-	border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-	background: oklch(var(--pf));
-}
-
-/* Wordmark */
-.wordmark {
-	color: #60a5fa;
-}
-
-/* Smooth page transitions */
-@media (prefers-reduced-motion: no-preference) {
+@layer base {
+	/* The background sits on html so the wisps, behind body's content, still show */
 	html {
-		scroll-behavior: smooth;
+		@apply bg-base-100;
+	}
+
+	body {
+		@apply text-base-content font-sans font-light antialiased;
+	}
+
+	::selection {
+		background: oklch(var(--p) / 0.25);
 	}
 }
 
-/* Clean cards */
-.card {
-	will-change: transform;
+@layer components {
+	/* Section labels: small, lowercase, spaced */
+	.eyebrow {
+		@apply text-xs lowercase tracking-[0.2em] text-base-content/40;
+	}
+
+	.nav-link {
+		@apply lowercase tracking-widest text-sm text-base-content/40 transition-colors duration-500;
+	}
+
+	.nav-link:hover,
+	.nav-link[aria-current="page"] {
+		@apply text-base-content;
+	}
+
+	.quiet-link {
+		@apply transition-colors duration-300;
+	}
+
+	.quiet-link:hover {
+		@apply text-base-content;
+	}
+
+	/* Tables with no frame: hairlines between rows only */
+	.quiet-table {
+		@apply w-full text-sm;
+	}
+
+	.quiet-table th {
+		@apply eyebrow font-normal text-left pb-3 pr-4;
+	}
+
+	.quiet-table td {
+		@apply py-3 pr-4 align-top border-t border-base-content/5;
+	}
+
+	.quiet-table tbody tr {
+		@apply transition-colors duration-500;
+	}
+
+	.quiet-table tbody tr:hover td {
+		@apply bg-base-content/[0.015];
+	}
+
+	.quiet-table.compact td {
+		@apply py-1.5;
+	}
+
+	.quiet-table.compact tr:first-child td {
+		@apply border-t-0;
+	}
+
+	/* Drawers: one hairline-separated line per project that opens to its components */
+	.drawer-row {
+		@apply border-t border-base-content/5;
+	}
+
+	.drawer-row:last-child {
+		@apply border-b;
+	}
+
+	.drawer-row > summary {
+		@apply transition-colors duration-500;
+	}
+
+	.drawer-row > summary:hover {
+		@apply bg-base-content/[0.015];
+	}
+
+	.drawer-row .chevron {
+		@apply inline-block transition-transform duration-300;
+	}
+
+	.drawer-row[open] .chevron {
+		@apply rotate-90;
+	}
+
+	/* Status: a small dot in the state's tint, followed by a lowercase word */
+	.state {
+		@apply inline-flex items-center gap-2 lowercase whitespace-nowrap;
+	}
+
+	.dot {
+		@apply inline-block w-1.5 h-1.5 rounded-full bg-current shrink-0;
+	}
+
+	.dot-hollow {
+		@apply inline-block w-1.5 h-1.5 rounded-full border border-current shrink-0;
+	}
+
+	/* Errors and warnings: a thin tinted rule instead of a filled box */
+	.notice {
+		@apply border-l pl-4 py-1 text-sm;
+	}
 }
 
-/* Better focus states */
-input:focus, textarea:focus, select:focus {
-	outline: none;
-	box-shadow: 0 0 0 3px oklch(var(--p) / 0.3);
-	border-color: oklch(var(--p));
+/* A living thing breathes: healthy and in-progress dots slowly fade in and out */
+@keyframes breathe {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.35; }
 }
 
+.breathe {
+	animation: breathe 4s ease-in-out infinite;
+}
+
+/* Ring dots breathe out of step with each other */
+.ring-dot:nth-of-type(3n) { animation-delay: -1.3s; }
+.ring-dot:nth-of-type(3n+1) { animation-delay: -2.6s; }
+.ring-dot:nth-of-type(5n) { animation-duration: 5.5s; }
+
+.breathe-fast {
+	animation: breathe 1.4s ease-in-out infinite;
+}
+
+/* Content fades in once on load; polled swaps stay still */
+@keyframes materialize {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+.materialize {
+	animation: materialize 0.6s ease-out both;
+}
+
+.materialize-late {
+	animation: materialize 0.6s ease-out 0.1s both;
+}
+
+/* Spirits: faint flames rising slowly from below the page and fading out near the top */
+.spirits {
+	@apply fixed inset-0 -z-10 overflow-hidden pointer-events-none text-base-content;
+}
+
+.spirit {
+	position: absolute;
+	bottom: -48px;
+	opacity: 0;
+	filter: blur(0.6px);
+	animation: rise 80s linear infinite;
+}
+
+.spirit > span {
+	display: block;
+	animation: sway 9s ease-in-out infinite alternate;
+}
+
+.spirit:nth-child(even) > span {
+	animation-duration: 13s;
+	animation-direction: alternate-reverse;
+}
+
+@keyframes rise {
+	0% { transform: translateY(0); opacity: 0; }
+	15% { opacity: var(--peak, 0.08); }
+	70% { opacity: var(--peak, 0.08); }
+	100% { transform: translateY(calc(-100vh - 96px)); opacity: 0; }
+}
+
+@keyframes sway {
+	from { transform: translateX(-14px) rotate(-6deg); }
+	to { transform: translateX(14px) rotate(6deg); }
+}
+
+/* The logo floats gently */
+.logo {
+	animation: float 7s ease-in-out infinite;
+}
+
+@keyframes float {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.breathe, .breathe-fast, .materialize, .materialize-late, .logo, .spirit > span {
+		animation: none;
+	}
+
+	.spirits {
+		display: none;
+	}
+}
+
+/* Faint scrollbar */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: oklch(var(--bc) / 0.12) transparent;
+}
+
+details > summary {
+	list-style: none;
+}
+
+details > summary::-webkit-details-marker {
+	display: none;
+}
