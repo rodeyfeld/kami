@@ -1,5 +1,6 @@
-// Package woodpecker reads pipelines from ouroboros, the Woodpecker CI server. It only makes
-// anonymous GET requests, which Woodpecker allows for public repos, so kami holds no CI credentials.
+// Package woodpecker reads pipelines from ouroboros, the Woodpecker CI server. It only makes GET
+// requests: anonymously, which Woodpecker allows for public repos, or with the token of a user that
+// has read-only access to the private ones (the forge's permissions carry over to Woodpecker).
 package woodpecker
 
 import (
@@ -70,13 +71,15 @@ type Event struct {
 
 type Client struct {
 	base   string
+	token  string // empty for anonymous requests
 	http   *http.Client
 	stream *http.Client
 }
 
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL, token string) *Client {
 	return &Client{
 		base:   strings.TrimSuffix(baseURL, "/"),
+		token:  token,
 		http:   &http.Client{Timeout: 10 * time.Second},
 		stream: &http.Client{}, // the event stream stays open, so no overall timeout
 	}
@@ -121,6 +124,7 @@ func (c *Client) Stream(ctx context.Context, onEvent func(Event)) error {
 		return err
 	}
 	req.Header.Set("Accept", "text/event-stream")
+	c.authorize(req)
 	resp, err := c.stream.Do(req)
 	if err != nil {
 		return err
@@ -155,6 +159,7 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	if err != nil {
 		return err
 	}
+	c.authorize(req)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -168,4 +173,10 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 		return fmt.Errorf("GET %s: %s", path, resp.Status)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (c *Client) authorize(req *http.Request) {
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 }

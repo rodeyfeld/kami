@@ -15,7 +15,7 @@ var t0 = time.Date(2026, 10, 10, 23, 0, 0, 0, time.UTC)
 
 func unix(d time.Duration) int64 { return t0.Add(d).Unix() }
 
-// fakeServer serves repos and pipelines the way an anonymous Woodpecker client sees them
+// fakeServer serves repos and pipelines the way Woodpecker does: private repos only to requests with its token
 type fakeServer struct {
 	mu        sync.Mutex
 	repos     map[int64]Repo
@@ -23,6 +23,8 @@ type fakeServer struct {
 	logs      map[int64][]string
 	events    chan Event
 }
+
+const fakeToken = "kami-read-token"
 
 func newFakeServer() *fakeServer {
 	return &fakeServer{
@@ -78,7 +80,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(list)
 	case scan(r.URL.Path, "/api/repos/%d", &repoID):
 		repo, ok := f.repos[repoID]
-		if !ok || repo.Private {
+		if !ok || (repo.Private && r.Header.Get("Authorization") != "Bearer "+fakeToken) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -119,6 +121,10 @@ func step(id int64, name, state string, started, finished time.Duration) Step {
 }
 
 func setup(t *testing.T) (*fakeServer, *Tracker) {
+	return setupWithToken(t, "")
+}
+
+func setupWithToken(t *testing.T, token string) (*fakeServer, *Tracker) {
 	f := newFakeServer()
 	f.repos[1] = Repo{ID: 1, Name: "kami", FullName: "rodeyfeld/kami", Active: true}
 	f.repos[2] = Repo{ID: 2, Name: "mirage", FullName: "rodeyfeld/mirage", Active: true}
@@ -142,7 +148,7 @@ func setup(t *testing.T) (*fakeServer, *Tracker) {
 
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
-	tr := NewTracker(NewClient(srv.URL), "https://ouroboros.pinwheel.fan")
+	tr := NewTracker(NewClient(srv.URL, token), "https://ouroboros.pinwheel.fan")
 	if err := tr.Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +174,14 @@ func TestSyncSkipsPrivateReposAndLoadsSteps(t *testing.T) {
 	}
 	if d := kami.Steps[0].Duration; d == nil || *d != 150*time.Second {
 		t.Fatalf("build duration: %v", d)
+	}
+}
+
+func TestTokenSeesPrivateRepos(t *testing.T) {
+	_, tr := setupWithToken(t, fakeToken)
+
+	if s := tr.Status(); s.Repos != 4 || s.Error != "" {
+		t.Fatalf("status: %+v", s)
 	}
 }
 
@@ -264,7 +278,7 @@ func TestKilledPipelineDoesNotMatchForever(t *testing.T) {
 
 	srv := httptest.NewServer(f)
 	defer srv.Close()
-	tr := NewTracker(NewClient(srv.URL), "")
+	tr := NewTracker(NewClient(srv.URL, ""), "")
 	if err := tr.Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}

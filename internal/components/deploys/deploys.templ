@@ -72,7 +72,7 @@ templ Content(d *k8s.Deploys) {
 	<div id="steps">
 		if d.CI != nil && len(d.Pipelines) > 0 {
 			<h2 class="eyebrow">pipelines</h2>
-			<p class="text-xs text-base-content/30 mt-1 mb-6">recent woodpecker runs across every public repo</p>
+			<p class="text-xs text-base-content/30 mt-1 mb-6">recent woodpecker runs across every repo kami can see</p>
 			@ciWarning(d.CI)
 			@PipelineList(d.Pipelines)
 		} else {

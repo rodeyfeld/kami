@@ -23,10 +23,12 @@ func NewK8sMonitor(c *k8s.Client) *K8sMonitor {
 	deploys.Start(context.Background())
 	m := &K8sMonitor{client: c, pinger: k8s.NewPinger(c), deploys: deploys}
 
-	// ouroboros serves public repos to anonymous readers, so this needs no token
+	// The repos are private on schematics, so ouroboros needs the token of kami's read-only
+	// user. Without one, kami reads anonymously and only sees public repos.
 	if url := envOr("KAMI_WOODPECKER_URL", "http://ouroboros-service:8001"); url != "off" {
 		public := envOr("KAMI_WOODPECKER_PUBLIC_URL", "https://ouroboros.pinwheel.fan")
-		m.ci = woodpecker.NewTracker(woodpecker.NewClient(url), public)
+		client := woodpecker.NewClient(url, os.Getenv("KAMI_WOODPECKER_TOKEN"))
+		m.ci = woodpecker.NewTracker(client, public)
 		m.ci.Start(context.Background())
 	}
 	return m

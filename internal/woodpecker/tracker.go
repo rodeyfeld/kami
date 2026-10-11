@@ -77,7 +77,7 @@ func (p *PipelineView) Queued() bool {
 	return (p.Status == "pending" || p.Status == "created") && time.Since(p.Created) > queuedWarning
 }
 
-// Tracker keeps recent pipelines for every public repo, kept current by Woodpecker's event stream
+// Tracker keeps recent pipelines for every repo the client can see, kept current by Woodpecker's event stream
 type Tracker struct {
 	client    *Client
 	publicURL string
@@ -139,7 +139,7 @@ func (t *Tracker) Sync(ctx context.Context) error {
 		return err
 	}
 	if len(repos) == 0 {
-		return errors.New("no public repos visible")
+		return errors.New("no repos visible")
 	}
 
 	var wg sync.WaitGroup
@@ -179,7 +179,8 @@ func (t *Tracker) discover(ctx context.Context) ([]Repo, error) {
 			return nil, err
 		}
 		gap = 0
-		if repo.Active && !repo.Private {
+		// Woodpecker already hides repos the client can't read, so private ones here are visible to it
+		if repo.Active {
 			repos = append(repos, *repo)
 		}
 	}
@@ -221,7 +222,7 @@ func (t *Tracker) isCurrent(repoID int64, p Pipeline) bool {
 }
 
 func (t *Tracker) handle(ctx context.Context, e Event) {
-	if e.Repo.Private || e.Pipeline.Number == 0 {
+	if e.Pipeline.Number == 0 {
 		return
 	}
 	t.mu.Lock()
