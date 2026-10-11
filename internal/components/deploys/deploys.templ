@@ -24,8 +24,7 @@ templ Page() {
 			</div>
 			<div class="grid gap-16 lg:grid-cols-5">
 				<section class="lg:col-span-3 min-w-0">
-					<h2 class="eyebrow">rollouts</h2>
-					<p class="text-xs text-base-content/30 mt-1 mb-6">each restart or spec change is a new revision</p>
+					<h2 class="eyebrow mb-6">rollouts</h2>
 					<div id="rollouts"></div>
 				</section>
 				<section class="lg:col-span-2 min-w-0">
@@ -71,8 +70,7 @@ templ Content(d *k8s.Deploys) {
 	</div>
 	<div id="steps">
 		if d.CI != nil && len(d.Pipelines) > 0 {
-			<h2 class="eyebrow">pipelines</h2>
-			<p class="text-xs text-base-content/30 mt-1 mb-6">recent woodpecker runs across every repo kami can see</p>
+			<h2 class="eyebrow mb-6">pipelines</h2>
 			@ciWarning(d.CI)
 			@PipelineList(d.Pipelines)
 		} else {
@@ -89,7 +87,7 @@ templ Content(d *k8s.Deploys) {
 
 templ InProgress(rollouts []k8s.Rollout, pipelines []woodpecker.PipelineView) {
 	if len(rollouts) == 0 && len(pipelines) == 0 {
-		<p class="text-center font-serif text-lg tracking-widest text-base-content/30">all is still</p>
+		<p class="text-center font-serif text-lg tracking-widest text-base-content/30">nothing deploying</p>
 	} else {
 		<div class="space-y-8">
 			for _, p := range pipelines {
