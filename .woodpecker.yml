@@ -9,7 +9,8 @@ steps:
   build:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      repo: edrodefeld/kami
+      registry: schematics.pinwheel.fan
+      repo: schematics.pinwheel.fan/rodeyfeld/kami
       auto_tag: true
       <<: *docker_creds
     when:
