@@ -12,6 +12,7 @@ steps:
       registry: schematics.pinwheel.fan
       repo: schematics.pinwheel.fan/rodeyfeld/kami
       auto_tag: true
+      mtu: 1450 # match the pod network (flannel), or downloads in RUN steps can hang
       <<: *docker_creds
     when:
       - event: [push, manual]
