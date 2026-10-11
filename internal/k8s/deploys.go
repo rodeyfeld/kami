@@ -122,6 +122,7 @@ type Deploys struct {
 // is gone from the cluster by the time anyone looks, so it has to be remembered as it happens.
 type DeployWatcher struct {
 	client *Client
+	now    func() time.Time // time.Now, or a fixed clock in tests
 
 	mu       sync.Mutex
 	revs     map[types.UID]*revisionMemory
@@ -137,6 +138,7 @@ type revisionMemory struct {
 func NewDeployWatcher(c *Client) *DeployWatcher {
 	return &DeployWatcher{
 		client: c,
+		now:    time.Now,
 		revs:   make(map[types.UID]*revisionMemory),
 		steps:  make(map[string]*Step),
 	}
@@ -170,7 +172,7 @@ func (w *DeployWatcher) Snapshot(ctx context.Context) *Deploys {
 }
 
 func (w *DeployWatcher) Refresh(ctx context.Context) *Deploys {
-	d := &Deploys{Rollouts: make([]Rollout, 0), Steps: make([]Step, 0), UpdatedAt: time.Now().UTC()}
+	d := &Deploys{Rollouts: make([]Rollout, 0), Steps: make([]Step, 0), UpdatedAt: w.now().UTC()}
 	ns := w.client.Namespace
 	cs := w.client.Clientset
 

@@ -66,7 +66,10 @@ func ownedPod(rs *appsv1.ReplicaSet, ready bool, digest string, readyAt time.Tim
 
 func watcher(objects ...runtime.Object) (*DeployWatcher, *fake.Clientset) {
 	cs := fake.NewSimpleClientset(objects...)
-	return NewDeployWatcher(&Client{Clientset: cs, Namespace: ns}), cs
+	w := NewDeployWatcher(&Client{Clientset: cs, Namespace: ns})
+	// Fixtures are dated around t0, so the step retention window has to be measured from there too
+	w.now = func() time.Time { return t0 }
+	return w, cs
 }
 
 func findRollout(t *testing.T, d *Deploys, workload string, revision int64) Rollout {
