@@ -69,15 +69,17 @@ Digests, ready times and steps are remembered in memory, so they reset when kami
 
 Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX polls `/partials/status` every 10 seconds to refresh the summary and table.
 
-The table groups workloads by project (the name up to the first dash, so `noctis-postgres` sits under `noctis`). Each project shows 90 daily uptime bars, its 90-day uptime and its current health, and opens to its components:
+Services are grouped by project (the name up to the first dash, so `noctis-postgres` sits under `noctis`). Each project shows 90 daily uptime bars, its 90-day uptime and one word for its state (healthy, degraded, down or off), and opens to its components:
 - **Health:** the rollout status combined with the ping. Ready pods whose health check fails show as "Not responding".
 - **Uptime:** the component's 90-day uptime.
 - **Check:** which probe kami called and what it returned, or why it couldn't call one.
 - **Age:** pod age and restart count.
 
+Jobs and CronJobs get their own section below, with bars of their latest run's result, when it ran, and whether it succeeded. They don't count toward their project's uptime.
+
 ### Uptime
 
-Every minute kami samples every workload and adds the minute to that day's bucket as up, degraded or down. A project counts as its worst component. Uptime is the share of observed time that wasn't down: degraded counts as up, since a rolling deploy reads as degraded while it still serves. Time when kami itself wasn't running isn't counted either way. The big number is the average of the projects.
+Every minute kami samples every workload and adds the minute to that day's bucket as up, degraded or down. A project counts as its worst service. Uptime is the share of observed time that wasn't down: degraded counts as up, since a rolling deploy reads as degraded while it still serves. Time when kami itself wasn't running isn't counted either way. The big number is the average of the projects.
 
 Buckets live in SQLite at `KAMI_UPTIME_DB` (default `/data/kami.db`, a PVC in the cluster) and are kept for 120 days. If the file can't be opened, the page works without uptime.
 

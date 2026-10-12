@@ -114,15 +114,23 @@
 
 	/* Uptime: fixed columns so every project's bars line up with the axis below them */
 	.uptime-name {
-		@apply w-20 sm:w-28 shrink-0;
+		@apply w-16 sm:w-28 shrink-0;
 	}
 
 	.uptime-pct {
-		@apply inline-block w-14 shrink-0;
+		@apply inline-block w-12 sm:w-14 shrink-0;
 	}
 
 	.uptime-state {
-		@apply flex justify-end w-4 sm:w-28 shrink-0;
+		@apply text-right w-16 sm:w-24 shrink-0 lowercase whitespace-nowrap;
+	}
+
+	.job-row {
+		@apply border-t border-base-content/5;
+	}
+
+	.job-row:last-child {
+		@apply border-b;
 	}
 
 	/* One faint stroke per day; the hovered day comes forward */

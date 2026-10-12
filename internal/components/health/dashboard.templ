@@ -59,7 +59,7 @@ templ StatusCards(status *monitor.Status, mode string, history *History) {
 	<div id="summary">
 		@overallUptime(status, history)
 		<p class="mt-6 text-sm text-base-content/40">
-			for i, t := range tallies(status, mode) {
+			for i, t := range tallies(status.Resources, mode) {
 				if i > 0 {
 					<span class="text-base-content/20">{ " · " }</span>
 				}
@@ -67,8 +67,12 @@ templ StatusCards(status *monitor.Status, mode string, history *History) {
 			}
 		</p>
 	</div>
-	<div id="resources-container">
-		@ResourceTable(groupResources(status.Resources), mode, history)
+	{{ services, jobs := splitJobs(status.Resources) }}
+	<div id="resources-container" class="space-y-12">
+		@ResourceTable(groupResources(services), mode, history)
+		if len(jobs) > 0 {
+			@JobList(jobs, history)
+		}
 	</div>
 	<span id="last-update">{ status.UpdatedAt.Format("15:04:05 UTC") }</span>
 }
@@ -92,13 +96,14 @@ templ overallUptime(status *monitor.Status, history *History) {
 // the components' checks.
 templ ResourceTable(groups []resourceGroup, mode string, history *History) {
 	<div>
+		<h2 class="eyebrow mb-3">services</h2>
 		for _, group := range groups {
 			@drawer(group, mode, history)
 		}
 		if len(groups) == 0 {
 			<p class="text-center py-10 text-base-content/40">nothing here</p>
 		} else {
-			<div class="flex items-center gap-4 pt-2 eyebrow whitespace-nowrap" aria-hidden="true">
+			<div class="flex items-center gap-2 sm:gap-4 pt-2 eyebrow whitespace-nowrap" aria-hidden="true">
 				<span class="w-2"></span>
 				<span class="uptime-name"></span>
 				<span class="flex-1 min-w-0 flex justify-center sm:justify-between">
@@ -114,20 +119,15 @@ templ ResourceTable(groups []resourceGroup, mode string, history *History) {
 }
 
 templ drawer(group resourceGroup, mode string, history *History) {
-	{{ label, color, motion := groupHealth(group.Resources, mode) }}
+	{{ word, color := projectState(group.Resources) }}
 	{{ days := history.days(uptime.GroupKey(group.Name)) }}
 	<details class="drawer-row" data-drawer={ group.Name }>
-		<summary class="flex items-center gap-4 py-2.5 cursor-pointer select-none">
+		<summary class="flex items-center gap-2 sm:gap-4 py-2.5 cursor-pointer select-none">
 			<span class="chevron text-base-content/25 text-xs w-2">›</span>
 			<span class="uptime-name font-mono text-[13px] truncate">{ group.Name }</span>
 			@bars(days)
 			@percent(days)
-			<span class="uptime-state">
-				<span class={ "state text-sm", color } title={ label }>
-					<span class={ "dot", motion }></span>
-					<span class="hidden sm:inline">{ label }</span>
-				</span>
-			</span>
+			<span class={ "uptime-state text-sm", color }>{ word }</span>
 		</summary>
 		<div class="overflow-x-auto pl-6 pb-3">
 			<table class="quiet-table compact table-fixed">
@@ -143,7 +143,7 @@ templ drawer(group resourceGroup, mode string, history *History) {
 
 // bars draws one thin stroke per day, tinted by that day's uptime; phones only get the last month
 templ bars(days []uptime.Day) {
-	<span class="flex-1 min-w-0 flex items-stretch gap-[2px] h-6">
+	<span class="flex-1 min-w-0 flex items-stretch gap-px sm:gap-[2px] h-6">
 		for i, d := range days {
 			<span class={ "uptime-bar", barColor(d), templ.KV("hidden sm:block", i < len(days)-mobileDays) } title={ barTitle(d) }></span>
 		}
@@ -165,9 +165,6 @@ templ ResourceRow(resource monitor.Resource, mode string, nested bool, days []up
 	<tr>
 		<td class="w-[38%]">
 			<span class={ "font-mono text-[13px] whitespace-nowrap", templ.KV("text-base-content/70", nested) }>{ resource.Name }</span>
-			if resource.Type == "Job" {
-				<span class="eyebrow ml-2">job</span>
-			}
 			if mode == "docker" && resource.Labels["id"] != "" {
 				<div class="text-xs text-base-content/40 font-mono">{ resource.Labels["id"] }</div>
 			}
@@ -197,11 +194,26 @@ templ ResourceRow(resource monitor.Resource, mode string, nested bool, days []up
 }
 
 templ HealthBadge(resource monitor.Resource, mode string) {
-	{{ label, color, motion := health(resource, mode) }}
-	<span class={ "state", color }>
-		<span class={ "dot", motion }></span>
-		<span>{ label }</span>
-	</span>
+	{{ label, color := health(resource, mode) }}
+	<span class={ "state", color }>{ label }</span>
+}
+
+// JobList gives CronJobs and Jobs their own rows: daily bars of their latest run's result, and
+// when it ran
+templ JobList(jobs []monitor.Resource, history *History) {
+	<div>
+		<h2 class="eyebrow mb-3">jobs</h2>
+		for _, job := range jobs {
+			{{ word, color := jobState(job) }}
+			<div class="job-row flex items-center gap-2 sm:gap-4 py-2.5">
+				<span class="w-2"></span>
+				<span class="uptime-name font-mono text-[13px] truncate">{ job.Name }</span>
+				@bars(history.days(job.Name))
+				<span class="uptime-pct font-mono text-xs text-right text-base-content/40 whitespace-nowrap">{ lastRun(job) }</span>
+				<span class={ "uptime-state text-sm", color }>{ word }</span>
+			</div>
+		}
+	</div>
 }
 
 // CheckCell says how health was determined: the probe kami called and its result, or why there wasn't one
@@ -258,67 +270,95 @@ func groupResources(resources []monitor.Resource) []resourceGroup {
 	return groups
 }
 
-// health returns a lowercase label, its tint, and whether the dot breathes (alive) or holds still
-func health(r monitor.Resource, mode string) (string, string, string) {
+// health returns a component's lowercase label and its tint
+func health(r monitor.Resource, mode string) (string, string) {
 	switch r.State {
 	case monitor.StateUp:
 		if mode == "docker" {
-			return "running", "text-success", "breathe"
+			return "running", "text-success"
 		}
-		return "up", "text-success", "breathe"
+		return "healthy", "text-success"
 	case monitor.StateDown:
 		if mode == "docker" {
-			return "stopped", "text-error", ""
+			return "stopped", "text-error"
 		}
-		return "down", "text-error", ""
+		return "down", "text-error"
 	case monitor.StateUnresponsive:
-		return "not responding", "text-error", ""
+		return "not responding", "text-error"
 	case monitor.StateDegraded:
-		return fmt.Sprintf("degraded %d/%d", r.Current, r.Desired), "text-warning", "breathe-fast"
+		return fmt.Sprintf("degraded %d/%d", r.Current, r.Desired), "text-warning"
 	case monitor.StateOff:
-		return "off", "text-base-content/30", ""
-	case monitor.StateSucceeded:
-		return "succeeded", "text-success/60", ""
+		return "off", "text-base-content/30"
 	case monitor.StateRunning:
-		return "running", "text-info", "breathe-fast"
-	case monitor.StateFailed:
-		return "failed", "text-error", ""
+		return "running", "text-info"
 	default:
-		return strings.ToLower(r.State), "text-base-content/40", ""
+		return strings.ToLower(r.State), "text-base-content/40"
 	}
 }
 
-// groupHealth sums up a project by its worst component
-func groupHealth(rs []monitor.Resource, mode string) (string, string, string) {
-	var down, degraded, running, up, off int
+// projectState sums up a project in one word: down when nothing in it is up, degraded when
+// only part of it is, off when it's scaled to zero
+func projectState(rs []monitor.Resource) (string, string) {
+	var up, degraded, down int
 	for _, r := range rs {
-		switch r.State {
-		case monitor.StateDown, monitor.StateUnresponsive, monitor.StateFailed:
-			down++
-		case monitor.StateDegraded:
-			degraded++
-		case monitor.StateRunning:
-			running++
-		case monitor.StateOff:
-			off++
-		default:
+		level, counted := monitor.Level(r.State)
+		switch {
+		case !counted:
+		case level == uptime.Up:
 			up++
+		case level == uptime.Degraded:
+			degraded++
+		default:
+			down++
 		}
 	}
 	switch {
-	case len(rs) == 1:
-		return health(rs[0], mode)
-	case down > 0:
-		return fmt.Sprintf("%d of %d down", down, len(rs)), "text-error", ""
-	case degraded > 0:
-		return fmt.Sprintf("%d degraded", degraded), "text-warning", "breathe-fast"
-	case running > 0:
-		return fmt.Sprintf("%d running", running), "text-info", "breathe-fast"
-	case off == len(rs):
-		return "off", "text-base-content/30", ""
+	case up+degraded+down == 0:
+		return "off", "text-base-content/30"
+	case down > 0 && up+degraded == 0:
+		return "down", "text-error"
+	case down > 0 || degraded > 0:
+		return "degraded", "text-warning"
 	default:
-		return fmt.Sprintf("all %d up", up+off), "text-success", "breathe"
+		return "healthy", "text-success"
 	}
+}
+
+func jobState(r monitor.Resource) (string, string) {
+	switch r.State {
+	case monitor.StateSucceeded:
+		return "healthy", "text-success"
+	case monitor.StateRunning:
+		return "running", "text-info"
+	case monitor.StatePending:
+		return "pending", "text-warning"
+	default:
+		return "failed", "text-error"
+	}
+}
+
+// lastRun turns a job's "Ran 3h ago" or "Started 2m ago" into "3h ago"
+func lastRun(r monitor.Resource) string {
+	for _, prefix := range []string{"Ran ", "Started "} {
+		if rest, ok := strings.CutPrefix(r.Status, prefix); ok {
+			return rest
+		}
+	}
+	return strings.ToLower(r.Status)
+}
+
+// splitJobs separates Jobs, which run and finish, from the services that should stay up
+func splitJobs(resources []monitor.Resource) ([]monitor.Resource, []monitor.Resource) {
+	var services, jobs []monitor.Resource
+	for _, r := range resources {
+		if r.Type == "Job" {
+			jobs = append(jobs, r)
+		} else {
+			services = append(services, r)
+		}
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })
+	return services, jobs
 }
 
 func podAge(started time.Time) string {
@@ -345,15 +385,32 @@ type tally struct {
 	Title        string
 }
 
-// tallies counts components by health for the line under the uptime, leaving out the zeros
-func tallies(status *monitor.Status, mode string) []tally {
+// tallies counts services by health for the line under the uptime, leaving out the zeros
+func tallies(resources []monitor.Resource, mode string) []tally {
+	services, _ := splitJobs(resources)
+	var healthy, degraded, down, unverified int
+	for _, r := range services {
+		level, counted := monitor.Level(r.State)
+		switch {
+		case !counted:
+		case level == uptime.Up:
+			healthy++
+			if r.Ping != nil && !r.Ping.Verified() {
+				unverified++
+			}
+		case level == uptime.Degraded:
+			degraded++
+		default:
+			down++
+		}
+	}
 	all := []tally{
-		{status.UpCount, "up", "text-success", ""},
-		{status.DegradedCount, "degraded", "text-warning", ""},
-		{status.DownCount, "down", "text-error", ""},
+		{healthy, "healthy", "text-success", ""},
+		{degraded, "degraded", "text-warning", ""},
+		{down, "down", "text-error", ""},
 	}
 	if mode == "kubernetes" {
-		all = append(all, tally{status.UnverifiedCount, "unverified", "text-warning", "Up, but kami can't call their health check"})
+		all = append(all, tally{unverified, "unverified", "text-warning", "Healthy, but kami can't call their health check"})
 	}
 	shown := make([]tally, 0, len(all))
 	for i, t := range all {

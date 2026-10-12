@@ -91,7 +91,7 @@ func Level(state string) (uptime.Level, bool) {
 }
 
 // Samples turns the status into one uptime sample per component and one per project, where a
-// project is as healthy as its worst component
+// project is as healthy as its worst service
 func (s *Status) Samples() []uptime.Sample {
 	samples := make([]uptime.Sample, 0, len(s.Resources))
 	groups := make(map[string]uptime.Level)
@@ -101,6 +101,10 @@ func (s *Status) Samples() []uptime.Sample {
 			continue
 		}
 		samples = append(samples, uptime.Sample{Key: r.Name, Level: level})
+		// A project's uptime is its services'; a failed job run doesn't take it down
+		if r.Type == "Job" {
+			continue
+		}
 		if worst, seen := groups[r.Group]; !seen || level > worst {
 			groups[r.Group] = level
 		}
