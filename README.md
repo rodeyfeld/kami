@@ -70,10 +70,10 @@ Digests, ready times and steps are remembered in memory, so they reset when kami
 Go + Echo for the backend, Templ for templates, Tailwind + DaisyUI for styling. HTMX polls `/partials/status` every 10 seconds to refresh the summary and table.
 
 Services are grouped by project (the name up to the first dash, so `noctis-postgres` sits under `noctis`). Each project shows 90 daily uptime bars, its 90-day uptime and one word for its state (healthy, degraded, down or off), and opens to its components:
-- **Health:** the rollout status combined with the ping. Ready pods whose health check fails show as "Not responding".
+- **Check:** which probe kami called and what it returned. Exec probes show their program (like `pg_isready`) and "ready", since the kubelet runs them and kami reads the pod's Ready flag.
+- **Pods:** ready count when some aren't, pod age and restart count.
 - **Uptime:** the component's 90-day uptime.
-- **Check:** which probe kami called and what it returned, or why it couldn't call one.
-- **Age:** pod age and restart count.
+- **State:** the rollout status combined with the ping. Ready pods whose health check fails show as "unresponsive".
 
 Jobs and CronJobs get their own section below, with bars of their latest run's result, when it ran, and whether it succeeded. They don't count toward their project's uptime.
 

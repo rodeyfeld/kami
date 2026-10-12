@@ -132,7 +132,7 @@ func TestPingTCPAndExec(t *testing.T) {
 	if r, _ := p.Ping(context.Background(), "garage"); !r.OK || r.Probe != "tcp" {
 		t.Errorf("garage: got %+v", r)
 	}
-	if r, _ := p.Ping(context.Background(), "atlas"); !r.OK || r.Probe != "exec" || r.Verified() {
+	if r, _ := p.Ping(context.Background(), "atlas"); !r.OK || r.Probe != "exec" || r.Command != "pg_isready" || r.Verified() {
 		t.Errorf("atlas: got %+v", r)
 	}
 	if r, _ := p.Ping(context.Background(), "luna"); !r.OK || r.Probe != "none" {
@@ -145,6 +145,20 @@ func TestPingTCPAndExec(t *testing.T) {
 	all, err := p.PingAll(context.Background())
 	if err != nil || len(all) != 4 {
 		t.Fatalf("PingAll: got %d results, err %v", len(all), err)
+	}
+}
+
+func TestExecProgramLooksInsideShellScripts(t *testing.T) {
+	cases := map[string][]string{
+		"pg_isready": {"/usr/bin/pg_isready", "-U", "prefect"},
+		"redis-cli":  {"sh", "-c", "redis-cli ping | grep PONG"},
+		"sh":         {"sh", "/probe.sh"},
+		"":           nil,
+	}
+	for want, command := range cases {
+		if got := execProgram(command); got != want {
+			t.Errorf("execProgram(%q) = %q, want %q", command, got, want)
+		}
 	}
 }
 

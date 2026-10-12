@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +34,7 @@ type PingResult struct {
 	OK         bool      `json:"ok"`
 	Probe      string    `json:"probe"` // "http" or "tcp" are called by kami; "exec" and "none" only reflect pod readiness
 	Path       string    `json:"path,omitempty"`
+	Command    string    `json:"command,omitempty"` // an exec probe's program, e.g. pg_isready
 	Port       int       `json:"port,omitempty"`
 	StatusCode int       `json:"status_code,omitempty"`
 	LatencyMs  int64     `json:"latency_ms"`
@@ -211,6 +214,7 @@ func (p *Pinger) ping(ctx context.Context, name string, pods []corev1.Pod) *Ping
 	switch {
 	case probe != nil && probe.Exec != nil:
 		r.Probe = "exec"
+		r.Command = execProgram(probe.Exec.Command)
 	case probe != nil && probe.HTTPGet != nil:
 		r.Probe = "http"
 		r.Path = probe.HTTPGet.Path
@@ -234,6 +238,20 @@ func (p *Pinger) ping(ctx context.Context, name string, pods []corev1.Pod) *Ping
 	}
 
 	return r
+}
+
+// execProgram names what an exec probe runs: its program, or the first word of a `sh -c` script
+func execProgram(command []string) string {
+	if len(command) == 0 {
+		return ""
+	}
+	program := path.Base(command[0])
+	if (program == "sh" || program == "bash") && len(command) >= 3 && command[1] == "-c" {
+		if fields := strings.Fields(command[2]); len(fields) > 0 {
+			return path.Base(fields[0])
+		}
+	}
+	return program
 }
 
 func recordPodStats(r *PingResult, pod *corev1.Pod) {
