@@ -49,7 +49,7 @@ templ Unavailable(message string) {
 		<p class="text-warning">deploy tracking unavailable</p>
 		<p class="font-mono text-xs text-base-content/50 break-all mt-1">{ message }</p>
 	</div>
-	<div id="in-progress"></div>
+	<div id="in-progress" class="empty:hidden"></div>
 	<div id="rollouts"></div>
 	<div id="steps"></div>
 }
@@ -62,7 +62,7 @@ templ Content(d *k8s.Deploys) {
 			</div>
 		}
 	</div>
-	<div id="in-progress">
+	<div id="in-progress" class="empty:hidden">
 		@InProgress(inProgress(d.Rollouts), activePipelines(d.Pipelines))
 	</div>
 	<div id="rollouts">
@@ -86,9 +86,7 @@ templ Content(d *k8s.Deploys) {
 }
 
 templ InProgress(rollouts []k8s.Rollout, pipelines []woodpecker.PipelineView) {
-	if len(rollouts) == 0 && len(pipelines) == 0 {
-		<p class="text-center font-serif text-lg tracking-widest text-base-content/30">nothing deploying</p>
-	} else {
+	if len(rollouts) > 0 || len(pipelines) > 0 {
 		<div class="space-y-8">
 			for _, p := range pipelines {
 				@activePipeline(p)
